@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
+import documentoRoutes from "./routes/documento.routes.js"; // <-- Agregamos la importación
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,9 @@ app.use("/api/health", (req, res) =>
 
 // Rutas de autenticación de tu plataforma
 app.use("/auth", authRoutes);
+
+// Rutas para manejar los documentos de los A.T.
+app.use("/api/documentos", documentoRoutes); // <-- Conectamos la ruta
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
