@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_acompanantes
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin_password
+      POSTGRES_DB: acompanantes_db
+    ports:
+      - "5434:5432" # Expone el puerto 5432 del contenedor a tu computadora
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Guarda los datos permanentemente
+
+volumes:
+  postgres_data:

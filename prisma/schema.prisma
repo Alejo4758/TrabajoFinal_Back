@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+// Tabla principal para el Registro / Inicio de Sesión
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String   // Acá irá la contraseña encriptada (con bcrypt, por ejemplo)
+  nombre    String
+  apellidos String
+  tipo_doc  String   // Ej: "DNI", "LC", "Pasaporte"
+  nro_doc   String   @unique
+  rol       Role     @default(CLIENTE)
+  
+  // Relación 1 a 1: Un usuario puede tener UN perfil de A.T. (opcional, de ahí el signo ?)
+  perfilAT  PerfilAT? 
+  
+  // Metadatos útiles
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Tabla específica para los datos extra que pedís si elige registrarse como A.T.
+model PerfilAT {
+  id         Int       @id @default(autoincrement())
+  fecha_nac  DateTime  // Solo se pide si es AT
+  estado     EstadoAT  @default(PENDIENTE) // Captura el círculo "ESTADO" de tu diagrama
+  
+  // Clave foránea que lo conecta con la tabla Usuario
+  usuarioId  Int       @unique
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  // Relación 1 a N: Un A.T. puede subir múltiples documentos (título, matrícula, etc.)
+  documentos DocumentoAT[]
+}
+
+// Entidad separada para almacenar las rutas de los archivos PDF/Imágenes
+model DocumentoAT {
+  id         Int       @id @default(autoincrement())
+  titulo     String    // Ej: "Analítico Universitario", "Certificado de curso"
+  urlArchivo String    // Acá vas a guardar la ruta, ej: "/uploads/docs/archivo_123.pdf"
+  
+  // Clave foránea que vincula este documento a un PerfilAT específico
+  perfilATId Int
+  perfilAT   PerfilAT  @relation(fields: [perfilATId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime  @default(now())
+}
+
+// Roles permitidos en la plataforma
+enum Role {
+  CLIENTE
+  AT
+  ADMIN
+}
+
+// Estados de validación para los Acompañantes Terapéuticos
+enum EstadoAT {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
