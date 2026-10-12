@@ -10,23 +10,22 @@ datasource db {
 
 // Tabla principal para el Registro / Inicio de Sesión
 model Usuario {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String   // Acá irá la contraseña encriptada (con bcrypt, por ejemplo)
-  nombre    String
-  apellidos String
-  tipo_doc  String   // Ej: "DNI", "LC", "Pasaporte"
-  nro_doc   String   @unique
-  rol       Role     @default(CLIENTE)
-  
-  // Relación 1 a 1: Un usuario puede tener UN perfil de A.T. (opcional, de ahí el signo ?)
-  perfilAT  PerfilAT? 
-  
-  // Metadatos útiles
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+  id                 Int       @id @default(autoincrement())
+  email              String    @unique
+  password           String
+  nombre             String
+  apellidos          String
+  tipo_doc           String
+  nro_doc            String    @unique
+  rol                String
+  emailVerificado    Boolean   @default(false)
+  verificationToken  String?   @unique
+  tokenExpira        DateTime?
+  createdAt          DateTime  @default(now())
 
+  // 👉 LÍNEA FALTANTE QUE DEBES AGREGAR:
+  perfilAT           PerfilAT? 
+}
 // Tabla específica para los datos extra que pedís si elige registrarse como A.T.
 model PerfilAT {
   id         Int       @id @default(autoincrement())

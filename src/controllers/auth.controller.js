@@ -1,6 +1,8 @@
+import crypto from "crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
+import { enviarEmailVerificacion } from "../services/email.service.js";
 
 export const register = async (req, res) => {
   try {
@@ -12,7 +14,7 @@ export const register = async (req, res) => {
       tipo_doc,
       nro_doc,
       rol, // Puede ser "CLIENTE", "AT" o "ADMIN"
-      fecha_nac // Solo lo recibiremos si rol === "AT"
+      fecha_nac, // Solo si rol === "AT"
     } = req.body;
 
     // 1. Validación de datos obligatorios para la tabla principal (Usuario)
@@ -25,14 +27,11 @@ export const register = async (req, res) => {
       return res.status(400).json({ error: "La fecha de nacimiento es obligatoria para el registro de A.T." });
     }
 
-    // 3. Verificar colisiones de email y documento en la misma consulta
+    // 3. Verificar colisiones de email y documento
     const existingUser = await prisma.usuario.findFirst({
       where: {
-        OR: [
-          { email },
-          { nro_doc }
-        ]
-      }
+        OR: [{ email }, { nro_doc }],
+      },
     });
 
     if (existingUser) {
@@ -41,7 +40,11 @@ export const register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4. Armar el payload base para Prisma
+    // 4. Generar token de verificación único y expiración (ej: 24 horas)
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const tokenExpira = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // 5. Armar el payload base para Prisma
     const userData = {
       email,
       password: hashedPassword,
@@ -50,31 +53,79 @@ export const register = async (req, res) => {
       tipo_doc,
       nro_doc,
       rol: rol || "CLIENTE",
+      emailVerificado: false,
+      verificationToken,
+      tokenExpira,
     };
 
-    // 5. Creación anidada: Si es AT, indicamos a Prisma que cree también el perfil vinculado
+    // 6. Creación anidada: Si es AT, vinculamos perfilAT
     if (rol === "AT") {
       userData.perfilAT = {
         create: {
-          fecha_nac: new Date(fecha_nac) // Prisma requiere un formato de fecha válido
-        }
+          fecha_nac: new Date(fecha_nac),
+        },
       };
     }
 
-    // 6. Ejecutar la inserción
+    // 7. Insertar usuario
     const newUser = await prisma.usuario.create({
       data: userData,
       include: {
-        perfilAT: true // Lo devolvemos para confirmar que se creó correctamente
-      }
+        perfilAT: true,
+      },
     });
 
-    const { password: _, ...userWithoutPassword } = newUser;
+    // 8. Enviar el correo con el token
+    await enviarEmailVerificacion(newUser.email, verificationToken);
 
-    return res.status(201).json(userWithoutPassword);
+    const { password: _, verificationToken: __, ...userWithoutSensitiveData } = newUser;
+
+    return res.status(201).json({
+      message: "Usuario registrado con éxito. Por favor revisa tu correo para confirmar tu cuenta.",
+      user: userWithoutSensitiveData,
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Error interno del servidor." });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({ error: "Token de verificación no proporcionado." });
+    }
+
+    // Buscar usuario con ese token y que no esté vencido
+    const user = await prisma.usuario.findFirst({
+      where: {
+        verificationToken: token,
+        tokenExpira: {
+          gte: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "El enlace de verificación es inválido o ha expirado." });
+    }
+
+    // Marcar como verificado y limpiar tokens
+    await prisma.usuario.update({
+      where: { id: user.id },
+      data: {
+        emailVerificado: true,
+        verificationToken: null,
+        tokenExpira: null,
+      },
+    });
+
+    return res.status(200).json({ message: "Correo confirmado exitosamente. Ya puedes iniciar sesión." });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Error al verificar el correo." });
   }
 };
 
@@ -86,12 +137,11 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: "Faltan datos obligatorios." });
     }
 
-    // Buscamos en la tabla usuario, trayendo de paso el perfilAT si es que existe
-    const user = await prisma.usuario.findUnique({ 
+    const user = await prisma.usuario.findUnique({
       where: { email },
       include: {
-        perfilAT: true 
-      }
+        perfilAT: true,
+      },
     });
 
     if (!user) {
@@ -103,15 +153,20 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: "Credenciales inválidas." });
     }
 
-    // Inyectamos el ID y el ROL en el token. Esto te va a servir más adelante
-    // para los middlewares que restringen rutas según quién hace la petición.
+    // Validar si confirmó su email antes de otorgar el JWT
+    if (!user.emailVerificado) {
+      return res.status(403).json({
+        error: "Debes confirmar tu correo electrónico antes de iniciar sesión.",
+      });
+    }
+
     const token = jwt.sign(
-      { userId: user.id, rol: user.rol }, 
-      process.env.JWT_SECRET, 
+      { userId: user.id, rol: user.rol },
+      process.env.JWT_SECRET,
       { expiresIn: "2h" }
     );
 
-    const { password: _, ...userWithoutPassword } = user;
+    const { password: _, verificationToken: __, ...userWithoutPassword } = user;
 
     return res.status(200).json({
       token,
