@@ -1,5 +1,5 @@
 import express from "express";
-import { upload } from "../middlewares/upload.middleware.js";
+import upload from "../middlewares/upload.middleware.js";
 import prisma from "../../lib/prisma.js";
 
 const router = express.Router();
@@ -12,23 +12,20 @@ router.post("/subir", upload.array("documentos", 5), async (req, res) => {
       return res.status(400).json({ error: "No se enviaron archivos." });
     }
 
-    const { perfilATId } = req.body;
+    const { profileATId } = req.body;
 
-    if (!perfilATId) {
+    if (!profileATId) {
       return res.status(400).json({ error: "Falta el ID del perfil AT." });
     }
 
-    // Transformamos el array de archivos físicos en un array de objetos para la base de datos.
-    // Usamos el nombre original del archivo (ej. "Titulo_UBA.pdf") como título del documento.
-    const documentosData = req.files.map((archivo) => ({
-      titulo: archivo.originalname, 
-      urlArchivo: archivo.filename, // El nombre encriptado que generó Multer
-      perfilATId: parseInt(perfilATId)
+    const documentData = req.files.map((archivo) => ({
+      title: archivo.originalname,
+      fileUrl: archivo.filename,
+      profileATId: parseInt(profileATId)
     }));
 
-    // createMany es una función de Prisma que inserta múltiples filas en una sola operación
-    const resultado = await prisma.documentoAT.createMany({
-      data: documentosData
+    const resultado = await prisma.documentAT.createMany({
+      data: documentData
     });
 
     return res.status(201).json({

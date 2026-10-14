@@ -7,62 +7,310 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==========================================
+// 1. USUARIOS, PERFILES Y VALIDACIÓN
+// ==========================================
 
-// Tabla principal para el Registro / Inicio de Sesión
-model Usuario {
-  id                 Int       @id @default(autoincrement())
-  email              String    @unique
-  password           String
-  nombre             String
-  apellidos          String
-  tipo_doc           String
-  nro_doc            String    @unique
-  rol                String
-  emailVerificado    Boolean   @default(false)
-  verificationToken  String?   @unique
-  tokenExpira        DateTime?
-  createdAt          DateTime  @default(now())
+// Main user table for registration and login
+model User {
+  id                Int       @id @default(autoincrement())
+  email             String    @unique
+  password          String
+  name              String    @map("nombre")
+  lastName          String    @map("apellidos")
+  documentType      String    @map("tipo_doc")
+  documentNumber    String    @unique @map("nro_doc")
+  role              Role      @default(CLIENT) @map("rol")
+  emailVerified     Boolean   @default(false) @map("emailVerificado")
+  verificationToken String?   @unique
+  tokenExpiresAt    DateTime? @map("tokenExpira")
+  createdAt         DateTime  @default(now())
 
-  // 👉 LÍNEA FALTANTE QUE DEBES AGREGAR:
-  perfilAT           PerfilAT? 
-}
-// Tabla específica para los datos extra que pedís si elige registrarse como A.T.
-model PerfilAT {
-  id         Int       @id @default(autoincrement())
-  fecha_nac  DateTime  // Solo se pide si es AT
-  estado     EstadoAT  @default(PENDIENTE) // Captura el círculo "ESTADO" de tu diagrama
-  
-  // Clave foránea que lo conecta con la tabla Usuario
-  usuarioId  Int       @unique
-  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  // Relaciones de rol
+  profileAT ProfileAT?
+  admin     Admin?
 
-  // Relación 1 a N: Un A.T. puede subir múltiples documentos (título, matrícula, etc.)
-  documentos DocumentoAT[]
-}
+  // Relaciones del Sistema de Chat
+  conversations ConversationUser[]
+  messagesSent  Message[]          @relation("SenderMessages")
 
-// Entidad separada para almacenar las rutas de los archivos PDF/Imágenes
-model DocumentoAT {
-  id         Int       @id @default(autoincrement())
-  titulo     String    // Ej: "Analítico Universitario", "Certificado de curso"
-  urlArchivo String    // Acá vas a guardar la ruta, ej: "/uploads/docs/archivo_123.pdf"
-  
-  // Clave foránea que vincula este documento a un PerfilAT específico
-  perfilATId Int
-  perfilAT   PerfilAT  @relation(fields: [perfilATId], references: [id], onDelete: Cascade)
-  
-  createdAt  DateTime  @default(now())
+  // Relaciones del Calendario (como cliente/paciente)
+  calendarActivities CalendarActivity[] @relation("UserCalendar")
+
+  @@map("Usuario")
 }
 
-// Roles permitidos en la plataforma
+model Admin {
+  id     Int  @id @default(autoincrement())
+  userId Int  @unique @map("usuarioId")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  validations Validation[]
+
+  @@map("Admin")
+}
+
+model Validation {
+  id           Int      @id @default(autoincrement())
+  status       StatusAT @default(PENDING) @map("estado")
+  observations String?  @map("observaciones") @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  adminId Int?   @map("adminId")
+  admin   Admin? @relation(fields: [adminId], references: [id])
+
+  profileATId Int       @map("perfilATId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  @@map("Validacion")
+}
+
+// Additional data for therapeutic companions
+model ProfileAT {
+  id          Int      @id @default(autoincrement())
+  dateOfBirth DateTime @map("fecha_nac")
+  studies     String?  @map("estudios")
+  genre       String?  @map("genero")
+  status      StatusAT @default(PENDING) @map("estado")
+
+  userId Int  @unique @map("usuarioId")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Documentos y Validaciones
+  documents   DocumentAT[]
+  validations Validation[]
+
+  // Filtros (Tablas intermedias de la pizarra)
+  localities    AT_Locality[]
+  especialities AT_Especiality[]
+  obrasSociales AT_OSoc[]
+
+  // Experiencia y Disponibilidad Horaria
+  experiences  Experience[]
+  availability AvailabilityAT[]
+
+  // Calendario (como Acompañante Terapéutico)
+  calendarActivities CalendarActivity[]
+
+  @@map("PerfilAT")
+}
+
+// File paths for uploaded PDF/image documents
+model DocumentAT {
+  id      Int    @id @default(autoincrement())
+  title   String @map("titulo")
+  fileUrl String @map("urlArchivo")
+
+  profileATId Int       @map("perfilATId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("DocumentoAT")
+}
+
+// ==========================================
+// 2. SISTEMA DE FILTROS Y PERFIL PROFESIONAL
+// ==========================================
+
+model Locality {
+  id   Int    @id @default(autoincrement())
+  name String @map("nombre")
+
+  ats AT_Locality[]
+
+  @@map("Localidad")
+}
+
+model AT_Locality {
+  profileATId Int @map("atId")
+  localityId  Int @map("localidadId")
+
+  profileAT ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+  locality  Locality  @relation(fields: [localityId], references: [id], onDelete: Cascade)
+
+  @@id([profileATId, localityId])
+  @@map("AT_Localidad")
+}
+
+model Especiality {
+  id   Int    @id @default(autoincrement())
+  name String @map("nombre")
+
+  ats AT_Especiality[]
+
+  @@map("Especialidad")
+}
+
+model AT_Especiality {
+  profileATId   Int @map("atId")
+  especialityId Int @map("espId")
+
+  profileAT   ProfileAT   @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+  especiality Especiality @relation(fields: [especialityId], references: [id], onDelete: Cascade)
+
+  @@id([profileATId, especialityId])
+  @@map("AT_Especialidad")
+}
+
+model ObraSocial {
+  id   Int    @id @default(autoincrement())
+  name String @map("nombre")
+
+  ats AT_OSoc[]
+
+  @@map("ObraSocial")
+}
+
+model AT_OSoc {
+  profileATId  Int @map("atId")
+  obraSocialId Int @map("osId")
+
+  profileAT  ProfileAT  @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+  obraSocial ObraSocial @relation(fields: [obraSocialId], references: [id], onDelete: Cascade)
+
+  @@id([profileATId, obraSocialId])
+  @@map("AT_OSoc")
+}
+
+model Experience {
+  id          Int       @id @default(autoincrement())
+  title       String    @map("titulo")
+  startDate   DateTime  @map("fecha_inicio")
+  finishDate  DateTime? @map("fecha_fin")
+  description String?   @map("descripcion") @db.Text
+
+  profileATId Int       @map("atId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  @@map("Experiencia")
+}
+
+model AvailabilityAT {
+  id        Int    @id @default(autoincrement())
+  dayOfWeek Int    @map("dia_semana") // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  startTime String @map("hora_inicio") // Ej: "09:00"
+  endTime   String @map("hora_fin") // Ej: "18:00"
+
+  profileATId Int       @map("atId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  @@map("DisponibilidadHoraria")
+}
+
+// ==========================================
+// 3. SISTEMA DE CHAT
+// ==========================================
+
+model Conversation {
+  id        Int      @id @default(autoincrement())
+  isGroup   Boolean  @default(false) @map("es_grupo")
+  title     String?  @map("titulo")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    ConversationUser[]
+  messages Message[]
+
+  @@map("Conversacion")
+}
+
+model ConversationUser {
+  conversationId Int       @map("conv_id")
+  userId         Int       @map("usuario_id")
+  joinedAt       DateTime  @default(now()) @map("fecha_union")
+  leftAt         DateTime? @map("fecha_salida")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@map("Conversacion_Usuario")
+}
+
+model Message {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conv_id")
+  senderId       Int       @map("remitente_id")
+  content        String    @map("contenido") @db.Text
+  createdAt      DateTime  @default(now())
+  deletedAt      DateTime? @map("eliminado_en")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("Mensaje")
+}
+
+// ==========================================
+// 4. SISTEMA DE CALENDARIO
+// ==========================================
+
+model CalendarActivity {
+  id          Int @id @default(autoincrement())
+  profileATId Int @map("atId")
+  userId      Int @map("usuarioId")
+
+  title       String        @map("titulo")
+  description String?       @map("descripcion") @db.Text
+  ubication   String?       @map("ubicacion")
+  type        ActivityType  @default(SESSION) @map("tipo")
+  state       ActivityState @default(PENDING) @map("estado")
+
+  startDate  DateTime @map("fecha_inicio")
+  finishDate DateTime @map("fecha_fin")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  profileAT ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+  user      User      @relation("UserCalendar", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([profileATId, startDate, finishDate])
+  @@index([userId, startDate])
+  @@map("Actividad_Calendario")
+}
+
+// ==========================================
+// 5. ENUMS
+// ==========================================
+
+// Allowed platform roles
 enum Role {
-  CLIENTE
+  CLIENT @map("CLIENTE")
   AT
   ADMIN
+
+  @@map("Role")
 }
 
-// Estados de validación para los Acompañantes Terapéuticos
-enum EstadoAT {
-  PENDIENTE
-  APROBADO
-  RECHAZADO
+// Validation states for therapeutic companions
+enum StatusAT {
+  PENDING  @map("PENDIENTE")
+  APPROVED @map("APROBADO")
+  REJECTED @map("RECHAZADO")
+
+  @@map("EstadoAT")
+}
+
+// Calendar activity types
+enum ActivityType {
+  SESSION   @map("SESION")
+  INTERVIEW @map("ENTREVISTA")
+  MEETING   @map("REUNION")
+  OTHER     @map("OTRO")
+
+  @@map("TipoActividad")
+}
+
+// Calendar activity states
+enum ActivityState {
+  PENDING   @map("PENDIENTE")
+  CONFIRMED @map("CONFIRMADO")
+  CANCELLED @map("CANCELADO")
+  COMPLETED @map("COMPLETADO")
+
+  @@map("EstadoActividad")
 }

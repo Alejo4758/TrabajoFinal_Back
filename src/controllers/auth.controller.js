@@ -4,33 +4,23 @@ import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
 import { enviarEmailVerificacion } from "../services/email.service.js";
 
+// REGISTRO DE CLIENTES NORMALES
 export const register = async (req, res) => {
   try {
-    const {
-      email,
-      password,
-      nombre,
-      apellidos,
-      tipo_doc,
-      nro_doc,
-      rol, // Puede ser "CLIENTE", "AT" o "ADMIN"
-      fecha_nac, // Solo si rol === "AT"
-    } = req.body;
+    const { email, password, name, lastName, documentType, documentNumber, role: roleFromBody, rol } = req.body;
 
-    // 1. Validación de datos obligatorios para la tabla principal (Usuario)
-    if (!email || !password || !nombre || !apellidos || !tipo_doc || !nro_doc) {
+    const normalizedRole = (roleFromBody || rol || "CLIENT").toString().toUpperCase();
+    const role = normalizedRole === "CLIENTE" ? "CLIENT" : normalizedRole;
+
+    if (!email || !password || !name || !lastName || !documentType || !documentNumber) {
       return res.status(400).json({ error: "Faltan datos obligatorios." });
     }
 
-    // 2. Validación específica de la lógica de negocio para Acompañantes Terapéuticos
-    if (rol === "AT" && !fecha_nac) {
-      return res.status(400).json({ error: "La fecha de nacimiento es obligatoria para el registro de A.T." });
-    }
+    const emailToSave = email.trim().toLowerCase();
 
-    // 3. Verificar colisiones de email y documento
-    const existingUser = await prisma.usuario.findFirst({
+    const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [{ email }, { nro_doc }],
+        OR: [{ email: emailToSave }, { documentNumber }],
       },
     });
 
@@ -39,43 +29,26 @@ export const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 4. Generar token de verificación único y expiración (ej: 24 horas)
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    const tokenExpira = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    
+    // CORRECCIÓN APLICADA AQUÍ (ISOString)
+    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); 
 
-    // 5. Armar el payload base para Prisma
-    const userData = {
-      email,
-      password: hashedPassword,
-      nombre,
-      apellidos,
-      tipo_doc,
-      nro_doc,
-      rol: rol || "CLIENTE",
-      emailVerificado: false,
-      verificationToken,
-      tokenExpira,
-    };
-
-    // 6. Creación anidada: Si es AT, vinculamos perfilAT
-    if (rol === "AT") {
-      userData.perfilAT = {
-        create: {
-          fecha_nac: new Date(fecha_nac),
-        },
-      };
-    }
-
-    // 7. Insertar usuario
-    const newUser = await prisma.usuario.create({
-      data: userData,
-      include: {
-        perfilAT: true,
+    const newUser = await prisma.user.create({
+      data: {
+        email: emailToSave,
+        password: hashedPassword,
+        name,
+        lastName,
+        documentType,
+        documentNumber,
+        role,
+        emailVerified: false,
+        verificationToken,
+        tokenExpiresAt,
       },
     });
 
-    // 8. Enviar el correo con el token
     await enviarEmailVerificacion(newUser.email, verificationToken);
 
     const { password: _, verificationToken: __, ...userWithoutSensitiveData } = newUser;
@@ -85,8 +58,87 @@ export const register = async (req, res) => {
       user: userWithoutSensitiveData,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Error interno del servidor." });
+    console.error("🔴 ERROR CRÍTICO EN REGISTER (CLIENTE):", error);
+    return res.status(500).json({ error: "Error interno del servidor al registrar cliente." });
+  }
+};
+
+// REGISTRO DE ACOMPAÑANTES TERAPÉUTICOS
+export const registerAT = async (req, res) => {
+  try {
+    const { name, lastName, dateOfBirth, documentType, documentNumber, email, password } = req.body;
+    const credencialFile = req.file; 
+
+    if (!email || !password || !name || !lastName || !documentType || !documentNumber || !dateOfBirth) {
+      return res.status(400).json({ error: "Faltan datos obligatorios." });
+    }
+
+    if (!credencialFile) {
+      return res.status(400).json({ error: "El documento de credenciales es obligatorio." });
+    }
+
+    const emailToSave = email.trim().toLowerCase();
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: emailToSave }, { documentNumber }],
+      },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({ error: "El email o el número de documento ya están registrados." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+
+    // CORRECCIÓN APLICADA AQUÍ (ISOString)
+    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const newUser = await prisma.user.create({
+      data: {
+        email: emailToSave,
+        password: hashedPassword,
+        name,
+        lastName,
+        documentType,
+        documentNumber,
+        role: "AT", 
+        emailVerified: false,
+        verificationToken,
+        tokenExpiresAt,
+        profileAT: {
+          create: {
+            dateOfBirth: new Date(`${dateOfBirth}T00:00:00Z`), // Fuerza formato válido
+            documents: {
+              create: {
+                title: credencialFile.originalname,
+                fileUrl: credencialFile.filename
+              }
+            }
+          },
+        },
+      },
+      include: {
+        profileAT: {
+          include: {
+            documents: true
+          }
+        },
+      },
+    });
+
+    await enviarEmailVerificacion(newUser.email, verificationToken);
+
+    const { password: _, verificationToken: __, ...userWithoutSensitiveData } = newUser;
+
+    return res.status(201).json({
+      message: "A.T. registrado con éxito. Por favor revisa tu correo para confirmar tu cuenta.",
+      user: userWithoutSensitiveData,
+    });
+  } catch (error) {
+    console.error("🔴 ERROR CRÍTICO EN REGISTER_AT:", error);
+    return res.status(500).json({ error: "Error interno del servidor al registrar AT." });
   }
 };
 
@@ -98,11 +150,10 @@ export const verifyEmail = async (req, res) => {
       return res.status(400).json({ error: "Token de verificación no proporcionado." });
     }
 
-    // Buscar usuario con ese token y que no esté vencido
-    const user = await prisma.usuario.findFirst({
+    const user = await prisma.user.findFirst({
       where: {
         verificationToken: token,
-        tokenExpira: {
+        tokenExpiresAt: {
           gte: new Date(),
         },
       },
@@ -112,19 +163,18 @@ export const verifyEmail = async (req, res) => {
       return res.status(400).json({ error: "El enlace de verificación es inválido o ha expirado." });
     }
 
-    // Marcar como verificado y limpiar tokens
-    await prisma.usuario.update({
+    await prisma.user.update({
       where: { id: user.id },
       data: {
-        emailVerificado: true,
+        emailVerified: true,
         verificationToken: null,
-        tokenExpira: null,
+        tokenExpiresAt: null,
       },
     });
 
     return res.status(200).json({ message: "Correo confirmado exitosamente. Ya puedes iniciar sesión." });
   } catch (error) {
-    console.error(error);
+    console.error("🔴 ERROR EN VERIFY_EMAIL:", error);
     return res.status(500).json({ error: "Error al verificar el correo." });
   }
 };
@@ -137,10 +187,12 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: "Faltan datos obligatorios." });
     }
 
-    const user = await prisma.usuario.findUnique({
-      where: { email },
+    const emailToLogin = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: emailToLogin },
       include: {
-        perfilAT: true,
+        profileAT: true,
       },
     });
 
@@ -153,15 +205,14 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: "Credenciales inválidas." });
     }
 
-    // Validar si confirmó su email antes de otorgar el JWT
-    if (!user.emailVerificado) {
+    if (!user.emailVerified) {
       return res.status(403).json({
         error: "Debes confirmar tu correo electrónico antes de iniciar sesión.",
       });
     }
 
     const token = jwt.sign(
-      { userId: user.id, rol: user.rol },
+      { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "2h" }
     );
@@ -173,7 +224,7 @@ export const login = async (req, res) => {
       user: userWithoutPassword,
     });
   } catch (error) {
-    console.error(error);
+    console.error("🔴 ERROR EN LOGIN:", error);
     return res.status(500).json({ error: "Error interno del servidor." });
   }
 };
