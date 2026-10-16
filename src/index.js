@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
+import atRoutes from './routes/at.routes.js';
 import documentoRoutes from "./routes/documento.routes.js"; // <-- Agregamos la importación
 
 const app = express();
@@ -11,6 +12,9 @@ app.use(express.json());
 app.use("/api/health", (req, res) =>
   res.status(200).json({ message: "Todo correcto master 👍" })
 );
+
+app.use('/ats', atRoutes); // Habilita: GET /ats/search
+app.use('/at', atRoutes);
 
 // Rutas de autenticación de tu plataforma
 app.use("/auth", authRoutes);

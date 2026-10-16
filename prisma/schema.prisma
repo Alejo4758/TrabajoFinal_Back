@@ -221,6 +221,7 @@ model ConversationUser {
   userId         Int       @map("usuario_id")
   joinedAt       DateTime  @default(now()) @map("fecha_union")
   leftAt         DateTime? @map("fecha_salida")
+  lastReadAt     DateTime  @default(now()) @map("ultima_lectura") // <-- Nuevo
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -240,7 +241,8 @@ model Message {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
-  @@index([conversationId])
+  // Reemplaza @@index([conversationId]) por el compuesto:
+  @@index([conversationId, createdAt(sort: Desc)], name: "idx_mensaje_conv_fecha")
   @@index([senderId])
   @@map("Mensaje")
 }

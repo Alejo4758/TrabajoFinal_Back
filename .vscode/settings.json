@@ -1,0 +1,47 @@
+{
+  // 💜 Identidad visual del workspace SGM Frontend
+  // Solo toca los "bordes" de la ventana (barra de título, barra de íconos
+  // y barra de estado). El editor, el explorador y las pestañas quedan con
+  // tu tema habitual, así que codear se siente igual.
+  //
+  // Para cambiar el tono: reemplazá los violetas de abajo.
+  //   Oscuro:  #1f1236   #2b1858   #4b2a8f
+  //   Medio:   #5b32a8   #7048c2   #7c4dff
+  //   Claro:   #b388ff   #e4d9ff   #f1eaff
+
+  // El título de la ventana aparece en el buscador superior y al pasar el mouse
+  // sobre la miniatura en la vista de ventanas de Ubuntu.
+  "window.title": "SGM Front — ${activeEditorShort}${dirty}",
+
+  "workbench.colorCustomizations": {
+    // Barra superior: lo más visible en la vista de todas las ventanas
+    "titleBar.activeBackground": "#850a0a",
+    "titleBar.activeForeground": "#f1eaff",
+    "titleBar.inactiveBackground": "#961914",
+    "titleBar.inactiveForeground": "#a899d1",
+    "titleBar.border": "#7c4dff",
+
+    // Barra lateral de íconos: violeta muy oscuro, casi neutro
+    "activityBar.background": "#801111",
+    "activityBar.foreground": "#e4d9ff",
+    "activityBar.inactiveForeground": "#8573b0",
+    "activityBar.activeBorder": "#b388ff",
+    "activityBarBadge.background": "#b388ff",
+    "activityBarBadge.foreground": "#1a0b33",
+
+    // Barra de estado inferior
+    "statusBar.background": "#b30c0c",
+    "statusBar.foreground": "#f1eaff",
+    "statusBar.noFolderBackground": "#3b2373",
+    "statusBarItem.hoverBackground": "#7048c2",
+    "statusBarItem.remoteBackground": "#7c4dff",
+    "statusBarItem.remoteForeground": "#ffffff",
+    // Naranja a propósito: así notás enseguida cuando estás depurando
+    "statusBar.debuggingBackground": "#c2410c",
+    "statusBar.debuggingForeground": "#ffffff",
+
+    // Detalles sutiles
+    "tab.activeBorderTop": "#b388ff",
+    "progressBar.background": "#9d72ff"
+  }
+}

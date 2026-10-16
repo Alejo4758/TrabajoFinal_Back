@@ -32,5 +32,8 @@
     "multer": "^2.4.0",
     "nodemailer": "^10.1.0",
     "pg": "^8.23.1"
+  },
+  "prisma": {
+  "seed": "node prisma/seed.js"
   }
 }
