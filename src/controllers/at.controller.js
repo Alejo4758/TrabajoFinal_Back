@@ -92,6 +92,9 @@ export const searchATs = async (req, res) => {
                     },
                     obrasSociales: {
                         include: { obraSocial: true }
+                    },
+                    availability: {
+                        orderBy: { dayOfWeek: 'asc' }
                     }
                 },
                 orderBy: { id: 'desc' }
@@ -112,10 +115,12 @@ export const searchATs = async (req, res) => {
             email: at.user.email,
             studies: at.studies,
             genre: at.genre,
+            dateOfBirth: at.dateOfBirth,
             status: at.status,
             localities: at.localities.map(l => l.locality.name),
             specialties: at.especialities.map(e => e.especiality.name),
-            socialPrograms: at.obrasSociales.map(o => o.obraSocial.name)
+            socialPrograms: at.obrasSociales.map(o => o.obraSocial.name),
+            availability: at.availability
         }));
 
         return res.status(200).json({
