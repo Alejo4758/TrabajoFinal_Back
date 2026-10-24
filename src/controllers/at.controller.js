@@ -7,10 +7,15 @@ export const searchATs = async (req, res) => {
         const { 
             page = 1, 
             limit = 10, 
+            province,
+            department,
             locality, 
             specialties, 
             socialPrograms 
         } = req.query;
+        const provinceName = typeof province === 'string' ? province.trim() : '';
+        const departmentName = typeof department === 'string' ? department.trim() : '';
+        const localityName = typeof locality === 'string' ? locality.trim() : '';
 
         const pageNumber = Math.max(1, parseInt(page, 10));
         const limitNumber = Math.max(1, parseInt(limit, 10));
@@ -21,14 +26,25 @@ export const searchATs = async (req, res) => {
             status: 'APPROVED' // Si en desarrollo aún están en PENDING, comenta esta línea para probar
         };
 
-        // 2. Filtro por Localidad (AT_Locality -> Locality)
-        if (locality) {
-            const isId = !isNaN(locality);
+        // 2. Filtro geográfico (AT_Locality -> Locality)
+        if (provinceName || departmentName || localityName) {
+            const localityWhere = {};
+
+            if (provinceName) localityWhere.provinceName = provinceName;
+            if (departmentName) localityWhere.departmentName = departmentName;
+
+            if (localityName) {
+                const isId = !isNaN(localityName);
+                if (isId) {
+                    localityWhere.id = parseInt(localityName, 10);
+                } else {
+                    localityWhere.name = { contains: localityName, mode: 'insensitive' };
+                }
+            }
+
             where.localities = {
                 some: {
-                    locality: isId 
-                        ? { id: parseInt(locality, 10) }
-                        : { name: { contains: locality.trim(), mode: 'insensitive' } }
+                    locality: localityWhere
                 }
             };
         }

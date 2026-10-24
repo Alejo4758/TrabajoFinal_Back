@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
 import atRoutes from './routes/at.routes.js';
+import localityRoutes from './routes/locality.routes.js';
 import documentoRoutes from "./routes/documento.routes.js"; // <-- Agregamos la importación
 import chatRoutes from "./routes/chat.routes.js";
 
@@ -32,6 +33,7 @@ app.use("/api/health", (req, res) =>
 
 app.use('/ats', atRoutes); // Habilita: GET /ats/search
 app.use('/at', atRoutes);
+app.use('/localities', localityRoutes);
 
 // Rutas de autenticación de tu plataforma
 app.use("/auth", authRoutes);
