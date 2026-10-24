@@ -2,6 +2,7 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
+import cloudinary from "../config/cloudinary.js";
 import { enviarEmailVerificacion } from "../services/email.service.js";
 
 // REGISTRO DE CLIENTES NORMALES
@@ -67,7 +68,7 @@ export const register = async (req, res) => {
 export const registerAT = async (req, res) => {
   try {
     const { name, lastName, dateOfBirth, documentType, documentNumber, email, password } = req.body;
-    const credencialFile = req.file; 
+    const credencialFile = req.file;
 
     if (!email || !password || !name || !lastName || !documentType || !documentNumber || !dateOfBirth) {
       return res.status(400).json({ error: "Faltan datos obligatorios." });
@@ -89,12 +90,21 @@ export const registerAT = async (req, res) => {
       return res.status(409).json({ error: "El email o el número de documento ya están registrados." });
     }
 
+    // 1. Subir el archivo en memoria (buffer) a Cloudinary
+    const b64 = Buffer.from(credencialFile.buffer).toString("base64");
+    const dataURI = `data:${credencialFile.mimetype};base64,${b64}`;
+
+    const uploadResult = await cloudinary.uploader.upload(dataURI, {
+      folder: "acompanantes_at/credenciales_registro",
+      resource_type: "auto", // Soporta tanto PDF como imágenes (JPG, PNG)
+    });
+
+    // 2. Preparar credenciales y token
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = crypto.randomBytes(32).toString("hex");
-
-    // CORRECCIÓN APLICADA AQUÍ (ISOString)
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    // 3. Crear Usuario + ProfileAT + DocumentAT con la URL de Cloudinary
     const newUser = await prisma.user.create({
       data: {
         email: emailToSave,
@@ -103,27 +113,27 @@ export const registerAT = async (req, res) => {
         lastName,
         documentType,
         documentNumber,
-        role: "AT", 
+        role: "AT",
         emailVerified: false,
         verificationToken,
         tokenExpiresAt,
         profileAT: {
           create: {
-            dateOfBirth: new Date(`${dateOfBirth}T00:00:00Z`), // Fuerza formato válido
+            dateOfBirth: new Date(`${dateOfBirth}T00:00:00Z`),
             documents: {
               create: {
                 title: credencialFile.originalname,
-                fileUrl: credencialFile.filename
-              }
-            }
+                fileUrl: uploadResult.secure_url, // <-- URL HTTPS real de Cloudinary
+              },
+            },
           },
         },
       },
       include: {
         profileAT: {
           include: {
-            documents: true
-          }
+            documents: true,
+          },
         },
       },
     });
