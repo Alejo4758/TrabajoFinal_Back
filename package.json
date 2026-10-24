@@ -21,7 +21,8 @@
   "homepage": "https://github.com/Alejo4758/TrabajoFinal_Back#readme",
   "devDependencies": {
     "@prisma/client": "^5.22.0",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "tsx": "^4.23.15"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
