@@ -115,11 +115,15 @@ model DocumentAT {
 // ==========================================
 
 model Locality {
-  id   Int    @id @default(autoincrement())
-  name String @map("nombre")
+  id           Int     @id @default(autoincrement())
+  name         String  @map("nombre")
+  georefId     String? @unique @map("georef_id")
+  provinceName String? @map("provincia")
+  departmentName String? @map("departamento")
 
   ats AT_Locality[]
 
+  @@index([provinceName, name])
   @@map("Localidad")
 }
 
