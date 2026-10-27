@@ -1,12 +1,17 @@
 import { Router } from 'express';
-import { searchATs, getATById } from '../controllers/at.controller.js';
+import { 
+    searchATs, 
+    getATById, 
+    getFilterOptions 
+} from '../controllers/at.controller.js';
 
 const router = Router();
 
-// Coincide con: `${BASE_URL}/ats/search`
+// Rutas estáticas primero
 router.get('/search', searchATs);
+router.get('/filters-options', getFilterOptions); // <-- Habilita GET /ats/filters-options
 
-// Coincide con: `${BASE_URL}/at/${id}`
+// Ruta con parámetro dinámico al final
 router.get('/:id', getATById);
 
 export default router;
