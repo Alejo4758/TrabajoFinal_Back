@@ -221,6 +221,28 @@ export const login = async (req, res) => {
       });
     }
 
+    if (user.role === "AT") {
+      const statusAT = user.profileAT?.status;
+
+      if (statusAT === "PENDING") {
+        return res.status(403).json({
+          code: "AT_PENDING",
+          error: "Tu cuenta está en revisión. Te avisaremos cuando sea aprobada.",
+        });
+      }
+
+      if (statusAT === "REJECTED") {
+        return res.status(403).json({
+          code: "AT_REJECTED",
+          error: "Tu solicitud de registro como A.T. fue rechazada.",
+        });
+      }
+
+      if (statusAT !== "APPROVED") {
+        return res.status(403).json({ error: "Tu cuenta de A.T. no está habilitada." });
+      }
+    }
+
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
