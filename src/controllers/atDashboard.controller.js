@@ -153,10 +153,10 @@ export const getMyDashboard = async (req, res) => {
           startDate: appointment.startDate.toISOString(),
           type: appointment.type,
           title: appointment.title,
-          client: {
-            name: appointment.user.name,
-            lastName: appointment.user.lastName,
-          },
+          // Recordatorios o supervisiones pueden no tener cliente vinculado
+          client: appointment.user
+            ? { name: appointment.user.name, lastName: appointment.user.lastName }
+            : null,
         })),
         notifications: notifications.map((notification) => ({
           id: notification.id,
