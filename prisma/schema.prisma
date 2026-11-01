@@ -37,6 +37,8 @@ model User {
   // Relaciones del Calendario (como cliente/paciente)
   calendarActivities CalendarActivity[] @relation("UserCalendar")
 
+  notifications Notification[]
+
   @@map("Usuario")
 }
 
@@ -115,10 +117,10 @@ model DocumentAT {
 // ==========================================
 
 model Locality {
-  id           Int     @id @default(autoincrement())
-  name         String  @map("nombre")
-  georefId     String? @unique @map("georef_id")
-  provinceName String? @map("provincia")
+  id             Int     @id @default(autoincrement())
+  name           String  @map("nombre")
+  georefId       String? @unique @map("georef_id")
+  provinceName   String? @map("provincia")
   departmentName String? @map("departamento")
 
   ats AT_Locality[]
@@ -280,8 +282,38 @@ model CalendarActivity {
 }
 
 // ==========================================
+// 6. SISTEMA DE NOTIFICACIONES
+// ==========================================
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int              @map("usuario_id")
+  type      NotificationType @map("tipo")
+  title     String           @map("titulo")
+  content   String           @map("contenido") @db.Text
+  link      String?          @map("enlace") // Ej: "/chat" o "/calendario"
+  isRead    Boolean          @default(false) @map("leido")
+  createdAt DateTime         @default(now()) @map("creado_en")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("Notificacion")
+}
+
+// ==========================================
 // 5. ENUMS
 // ==========================================
+
+enum NotificationType {
+  CHAT_MESSAGE      @map("CHAT_MENSAJE")
+  INTERVIEW_REQUEST @map("SOLICITUD_ENTREVISTA")
+  INTERVIEW_STATUS  @map("ESTADO_ENTREVISTA")
+  PROFILE_VALIDATED @map("PERFIL_VALIDADO")
+
+  @@map("TipoNotificacion")
+}
 
 // Allowed platform roles
 enum Role {

@@ -247,6 +247,32 @@ async function main() {
   }
 
   console.log('✅ ¡Datos de prueba de ATs vinculados correctamente a Georef!');
+
+  // 6. Usuario administrador (para el panel de validación de ATs)
+  const adminData = {
+    email: 'admin@test.com',
+    password: hashedPassword,
+    name: 'Admin',
+    lastName: 'RedAT',
+    documentType: 'DNI',
+    documentNumber: '30000000',
+    role: Role.ADMIN,
+    emailVerified: true
+  };
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: adminData.email },
+    update: adminData,
+    create: adminData
+  });
+
+  await prisma.admin.upsert({
+    where: { userId: adminUser.id },
+    update: {},
+    create: { userId: adminUser.id }
+  });
+
+  console.log(`✅ Admin creado: ${adminData.email} / 123456`);
 }
 
 main()
