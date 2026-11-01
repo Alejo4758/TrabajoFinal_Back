@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { getOrCreateDirectConversation } from "../services/conversation.service.js";
 const prisma = new PrismaClient();
 
 // 1. Obtener todas las conversaciones de un usuario (Bandeja de entrada)
@@ -73,28 +74,8 @@ export const getOrCreateDirectChat = async (req, res) => {
   const userB = Number(targetUserId);
 
   try {
-    // Buscar si ya tienen un chat directo
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        isGroup: false,
-        AND: [
-          { users: { some: { userId: userA } } },
-          { users: { some: { userId: userB } } },
-        ],
-      },
-    });
-
-    // Si no existe, lo creamos con ambos usuarios en Conversacion_Usuario
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          isGroup: false,
-          users: {
-            create: [{ userId: userA }, { userId: userB }],
-          },
-        },
-      });
-    }
+    // Busca el chat directo existente o lo crea con ambos usuarios en Conversacion_Usuario
+    const conversation = await getOrCreateDirectConversation(prisma, userA, userB);
 
     res.json(conversation);
   } catch (error) {
