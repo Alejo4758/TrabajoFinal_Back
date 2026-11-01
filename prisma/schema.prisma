@@ -264,9 +264,10 @@ model Message {
 // ==========================================
 
 model CalendarActivity {
-  id          Int @id @default(autoincrement())
-  profileATId Int @map("atId")
-  userId      Int @map("usuarioId")
+  id          Int  @id @default(autoincrement())
+  profileATId Int  @map("atId")
+  // Opcional: el AT puede agendar recordatorios, trámites o supervisiones sin vincular un cliente
+  userId      Int? @map("usuarioId")
 
   title       String        @map("titulo")
   description String?       @map("descripcion") @db.Text
@@ -280,7 +281,7 @@ model CalendarActivity {
   updatedAt  DateTime @updatedAt
 
   profileAT ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
-  user      User      @relation("UserCalendar", fields: [userId], references: [id], onDelete: Cascade)
+  user      User?     @relation("UserCalendar", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([profileATId, startDate, finishDate])
   @@index([userId, startDate])
@@ -346,6 +347,7 @@ enum NotificationType {
   INTERVIEW_REQUEST @map("SOLICITUD_ENTREVISTA")
   INTERVIEW_STATUS  @map("ESTADO_ENTREVISTA")
   PROFILE_VALIDATED @map("PERFIL_VALIDADO")
+  ACTIVITY_REMINDER @map("RECORDATORIO_ACTIVIDAD")
 
   @@map("TipoNotificacion")
 }
