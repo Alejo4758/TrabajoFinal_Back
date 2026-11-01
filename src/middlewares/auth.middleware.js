@@ -20,3 +20,14 @@ export const verifyToken = (req, res, next) => {
     return res.status(403).json({ error: "Token inválido o expirado." });
   }
 };
+
+// Se usa después de verifyToken: restringe la ruta a los roles indicados
+export const requireRole = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role)) {
+    return res
+      .status(403)
+      .json({ error: "No tenés permisos para realizar esta acción." });
+  }
+
+  next();
+};
