@@ -6,6 +6,7 @@ import localityRoutes from './routes/locality.routes.js';
 import documentoRoutes from "./routes/documento.routes.js"; // <-- Agregamos la importación
 import chatRoutes from "./routes/chat.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import linkRequestRoutes from "./routes/linkRequest.routes.js";
 
 import { PrismaClient } from "@prisma/client";
 import { createServer } from "http";
@@ -29,6 +30,11 @@ const io = new Server(httpServer, {
 app.set("io", io); // <-- Permite usar req.app.get("io") en otros controladores
 
 app.use(cors());
+
+// Solicitudes de vinculación cliente -> A.T.
+// Va antes del express.json() global porque tiene su propio parser con un límite de 10kb
+app.use('/link-requests', linkRequestRoutes);
+
 app.use(express.json());
 
 // Health check para monitorear que el servidor está vivo
