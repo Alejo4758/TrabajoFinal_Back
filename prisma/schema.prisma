@@ -39,6 +39,9 @@ model User {
 
   notifications Notification[]
 
+  // Solicitudes de vinculación enviadas (como cliente)
+  linkRequestsSent LinkRequest[]
+
   @@map("Usuario")
 }
 
@@ -94,6 +97,9 @@ model ProfileAT {
 
   // Calendario (como Acompañante Terapéutico)
   calendarActivities CalendarActivity[]
+
+  // Solicitudes de vinculación recibidas
+  linkRequests LinkRequest[]
 
   @@map("PerfilAT")
 }
@@ -303,6 +309,35 @@ model Notification {
 }
 
 // ==========================================
+// 7. SOLICITUDES DE VINCULACIÓN
+// ==========================================
+
+// Solicitud que un cliente le envía a un A.T. desde su perfil.
+// La migración add_link_requests agrega a mano un índice único parcial
+// "SolicitudVinculacion_pendiente_unica" (clienteId, perfilATId) WHERE estado = 'PENDIENTE',
+// que Prisma no soporta en el schema: evita dos solicitudes pendientes iguales aunque lleguen a la vez.
+model LinkRequest {
+  id             Int               @id @default(autoincrement())
+  description    String            @map("descripcion") @db.Text
+  locality       String            @map("localidad")
+  socialPrograms String[]          @map("obras_sociales")
+  otherCoverage  Boolean           @map("otra_cobertura")
+  status         LinkRequestStatus @default(PENDING) @map("estado")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  clientId Int  @map("clienteId")
+  client   User @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  profileATId Int       @map("perfilATId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  @@index([profileATId, status])
+  @@index([clientId])
+  @@map("SolicitudVinculacion")
+}
+
+// ==========================================
 // 5. ENUMS
 // ==========================================
 
@@ -331,6 +366,15 @@ enum StatusAT {
   REJECTED @map("RECHAZADO")
 
   @@map("EstadoAT")
+}
+
+// Link request states
+enum LinkRequestStatus {
+  PENDING  @map("PENDIENTE")
+  ACCEPTED @map("ACEPTADA")
+  REJECTED @map("RECHAZADA")
+
+  @@map("EstadoSolicitud")
 }
 
 // Calendar activity types
