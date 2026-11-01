@@ -7,6 +7,7 @@ import documentoRoutes from "./routes/documento.routes.js"; // <-- Agregamos la 
 import chatRoutes from "./routes/chat.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import linkRequestRoutes from "./routes/linkRequest.routes.js";
+import calendarRoutes from "./routes/calendar.routes.js";
 
 import { PrismaClient } from "@prisma/client";
 import { createServer } from "http";
@@ -54,6 +55,10 @@ app.use("/auth", authRoutes);
 
 // Rutas para manejar los documentos de los A.T.
 app.use("/api/documentos", documentoRoutes); // <-- Conectamos la ruta
+
+// Rutas del calendario y agenda del A.T.
+// Va antes de los routers montados en "/api" para que ninguno intercepte /api/calendar
+app.use("/api/calendar", calendarRoutes);
 
 // Rutas de chat
 app.use("/api", chatRoutes);
