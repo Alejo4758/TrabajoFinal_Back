@@ -20,8 +20,8 @@ export const getUserConversations = async (req, res) => {
       include: {
         users: {
           include: {
-            // Ajusta 'name' y 'email' según cómo se llamen en tu model User
-            user: { select: { id: true, name: true, email: true } },
+            // Solo los datos que muestra el chat: nombre completo y foto de perfil (null si no subió ninguna)
+            user: { select: { id: true, name: true, lastName: true, email: true, profilePicture: true } },
           },
         },
         messages: {

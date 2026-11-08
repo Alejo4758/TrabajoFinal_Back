@@ -24,6 +24,8 @@ model User {
   emailVerified     Boolean   @default(false) @map("emailVerificado")
   verificationToken String?   @unique
   tokenExpiresAt    DateTime? @map("tokenExpira")
+  // URL HTTPS (Cloudinary) de la foto de perfil; null si el usuario no subió ninguna
+  profilePicture    String?   @map("foto_perfil")
   createdAt         DateTime  @default(now())
 
   // Relaciones de rol
