@@ -9,6 +9,8 @@ import adminRoutes from "./routes/admin.routes.js";
 import linkRequestRoutes from "./routes/linkRequest.routes.js";
 import calendarRoutes from "./routes/calendar.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import patientRoutes from "./routes/patient.routes.js";
+import atPatientRoutes from "./routes/atPatient.routes.js";
 
 import { PrismaClient } from "@prisma/client";
 import { createServer } from "http";
@@ -63,6 +65,11 @@ app.use("/api/calendar", calendarRoutes);
 
 // Rutas de usuario (foto de perfil): POST /api/users/:id/avatar
 app.use("/api/users", userRoutes);
+
+// Pacientes: los que carga el titular de la cuenta (/api/patients)
+// y los que acompaña el A.T. logueado, con su plan de trabajo (/api/at/patients)
+app.use("/api/patients", patientRoutes);
+app.use("/api/at/patients", atPatientRoutes);
 
 // Rutas de chat
 app.use("/api", chatRoutes);
