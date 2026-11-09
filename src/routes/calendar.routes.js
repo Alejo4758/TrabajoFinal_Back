@@ -3,7 +3,7 @@ import { verifyToken, requireRole } from "../middlewares/auth.middleware.js";
 import {
   getMyATCalendar,
   getClientCalendar,
-  getATLinkedClients,
+  getATLinkedPatients,
   createCalendarActivity,
   requestInterview,
   updateCalendarActivity,
@@ -22,8 +22,8 @@ router.get("/me", requireRole("AT"), getMyATCalendar);
 // Turnos del cliente logueado
 router.get("/client/me", requireRole("CLIENT"), getClientCalendar);
 
-// Clientes vinculados al A.T., para el selector de pacientes al crear una cita
-router.get("/clients", requireRole("AT"), getATLinkedClients);
+// Pacientes vinculados al A.T., para el selector de pacientes al crear una cita
+router.get("/patients", requireRole("AT"), getATLinkedPatients);
 
 // Feriados nacionales: cualquier usuario logueado puede verlos en su calendario
 router.get("/holidays/:year", getNationalHolidays);

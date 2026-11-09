@@ -1,6 +1,7 @@
 import prisma from "../../lib/prisma.js";
 import { createNotification } from "../services/notification.service.js";
 import { getOrCreateDirectConversation } from "../services/conversation.service.js";
+import { patientPublicSelect, findOwnPatient, requesterLabel } from "../services/patient.service.js";
 
 const DESCRIPTION_MIN = 20;
 const DESCRIPTION_MAX = 500;
@@ -14,7 +15,9 @@ const RESPOND_STATUSES = ["ACCEPTED", "REJECTED"];
 // Señal interna para abortar la transacción de respondLinkRequest sin confundirla con un error real
 class AlreadyRespondedError extends Error {}
 
-// Datos públicos de la solicitud: nunca se exponen emails, documentos ni contraseñas
+// Datos públicos de la solicitud: nunca se exponen emails, documentos ni contraseñas.
+// client es el titular de la cuenta que la envía y patient la persona que va a recibir el acompañamiento
+// (sin diagnóstico ni notas: eso lo ve el A.T. recién cuando existe el acompañamiento)
 const linkRequestSelect = {
   id: true,
   description: true,
@@ -25,6 +28,7 @@ const linkRequestSelect = {
   createdAt: true,
   updatedAt: true,
   client: { select: { id: true, name: true, lastName: true } },
+  patient: { select: patientPublicSelect },
   profileAT: {
     select: {
       id: true,
@@ -42,10 +46,14 @@ const validateLinkRequestBody = (body) => {
   }
 
   // Lista blanca: solo se leen los campos del contrato, el resto se ignora (incluido un clientId)
-  const { atId, description, locality, socialPrograms, otherCoverage } = body;
+  const { atId, patientId, description, locality, socialPrograms, otherCoverage } = body;
 
   if (!Number.isInteger(atId) || atId <= 0) {
     return { error: "El profesional indicado no es válido." };
+  }
+
+  if (!Number.isInteger(patientId) || patientId <= 0) {
+    return { error: "Indicá para quién es el acompañamiento." };
   }
 
   if (typeof description !== "string") {
@@ -92,6 +100,7 @@ const validateLinkRequestBody = (body) => {
   return {
     data: {
       atId,
+      patientId,
       description: descriptionTrimmed,
       locality: localityTrimmed,
       socialPrograms: programsTrimmed,
@@ -165,13 +174,30 @@ export const createLinkRequest = async (req, res) => {
       return res.status(401).json({ error: "Tu sesión no es válida. Volvé a iniciar sesión." });
     }
 
+    // El paciente llega en el body: tiene que ser uno de los que cargó quien envía la solicitud.
+    // Si es de otra cuenta responde igual que si no existiera
+    const patient = await findOwnPatient(prisma, data.patientId, clientId);
+    if (!patient) {
+      return res.status(404).json({ error: "La persona indicada no existe." });
+    }
+
+    const currentTreatment = await prisma.treatment.findFirst({
+      where: { patientId: patient.id, profileATId: profileAT.id, status: { not: "FINISHED" } },
+      select: { id: true },
+    });
+
+    if (currentTreatment) {
+      return res.status(409).json({ error: "Esta persona ya tiene un acompañamiento con este profesional" });
+    }
+
+    // Una sola solicitud pendiente por paciente y A.T.: la misma cuenta sí puede pedir el mismo A.T. para otro paciente
     const pending = await prisma.linkRequest.findFirst({
-      where: { clientId, profileATId: profileAT.id, status: "PENDING" },
+      where: { patientId: patient.id, profileATId: profileAT.id, status: "PENDING" },
       select: { id: true },
     });
 
     if (pending) {
-      return res.status(409).json({ error: "Ya enviaste una solicitud a este profesional" });
+      return res.status(409).json({ error: "Ya enviaste una solicitud a este profesional para esta persona" });
     }
 
     let linkRequest;
@@ -179,6 +205,7 @@ export const createLinkRequest = async (req, res) => {
       linkRequest = await prisma.linkRequest.create({
         data: {
           clientId,
+          patientId: patient.id,
           profileATId: profileAT.id,
           description: data.description,
           locality: localityToSave,
@@ -190,7 +217,7 @@ export const createLinkRequest = async (req, res) => {
     } catch (error) {
       // Dos requests simultáneas: el índice único parcial frena la segunda
       if (error.code === "P2002") {
-        return res.status(409).json({ error: "Ya enviaste una solicitud a este profesional" });
+        return res.status(409).json({ error: "Ya enviaste una solicitud a este profesional para esta persona" });
       }
       throw error;
     }
@@ -205,7 +232,7 @@ export const createLinkRequest = async (req, res) => {
     await createNotification(req.app.get("io"), {
       userId: profileAT.userId,
       type: "INTERVIEW_REQUEST",
-      title: `Nueva solicitud de ${client.name} ${client.lastName}`,
+      title: `Nueva solicitud de ${requesterLabel(client, patient)}`,
       content: `${data.description}\nZona: ${localityToSave}\nObras sociales: ${coverage}`,
       link: "/linkRequests",
     });
@@ -286,7 +313,7 @@ export const respondLinkRequest = async (req, res) => {
     // El índice/condición de la transacción (status: "PENDING") es lo que realmente evita la carrera.
     const existing = await prisma.linkRequest.findFirst({
       where: { id, profileATId: profileAT.id },
-      select: { clientId: true, status: true },
+      select: { clientId: true, patientId: true, status: true },
     });
 
     if (!existing) {
@@ -312,6 +339,14 @@ export const respondLinkRequest = async (req, res) => {
         }
 
         if (newStatus === "ACCEPTED") {
+          // Aceptar la solicitud es lo que crea el acompañamiento entre el paciente y el AT.
+          // Si ya habían tenido uno que finalizó, se reactiva en vez de duplicarlo
+          await tx.treatment.upsert({
+            where: { patientId_profileATId: { patientId: existing.patientId, profileATId: profileAT.id } },
+            create: { patientId: existing.patientId, profileATId: profileAT.id },
+            update: { status: "ACTIVE" },
+          });
+
           // El cliente podrá hablar con el AT por el chat ya aceptada la solicitud
           await getOrCreateDirectConversation(tx, existing.clientId, atUserId);
         }

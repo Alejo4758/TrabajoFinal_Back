@@ -1,4 +1,5 @@
 import prisma from "../../lib/prisma.js";
+import { patientNameSelect } from "../services/patient.service.js";
 
 const ACTIVE_APPOINTMENT_STATES = ["PENDING", "CONFIRMED"];
 const UPCOMING_APPOINTMENTS_LIMIT = 5;
@@ -28,72 +29,61 @@ const countUnreadMessages = async (atUserId) => {
   });
 };
 
-// Clientes con una solicitud ACCEPTED a este AT, sin repetir (se queda con la solicitud más reciente por cliente),
-// con su última actividad pasada y próxima reunión calculadas en memoria a partir de un único findMany.
+// Pacientes con un acompañamiento con este AT (los finalizados no se listan), con su última actividad pasada
+// y próxima reunión calculadas en memoria a partir de un único findMany.
+// El id que se devuelve es el del paciente, no el del usuario titular de la cuenta.
 const getPatients = async (profileATId) => {
-  const acceptedRequests = await prisma.linkRequest.findMany({
-    where: { profileATId, status: "ACCEPTED" },
-    orderBy: { updatedAt: "desc" },
+  const treatments = await prisma.treatment.findMany({
+    where: { profileATId, status: { not: "FINISHED" } },
+    orderBy: { startDate: "desc" },
     select: {
-      updatedAt: true,
-      client: { select: { id: true, name: true, lastName: true } },
+      status: true,
+      startDate: true,
+      patient: { select: patientNameSelect },
     },
   });
 
-  const byClientId = new Map();
-  for (const request of acceptedRequests) {
-    if (!request.client || byClientId.has(request.client.id)) continue;
-    byClientId.set(request.client.id, {
-      id: request.client.id,
-      name: request.client.name,
-      lastName: request.client.lastName,
-      acceptedUpdatedAt: request.updatedAt,
-    });
-  }
-
-  const clientIds = [...byClientId.keys()];
-  if (clientIds.length === 0) {
+  if (treatments.length === 0) {
     return [];
   }
 
   const activities = await prisma.calendarActivity.findMany({
-    where: { profileATId, userId: { in: clientIds } },
-    select: { userId: true, startDate: true, state: true },
+    where: { profileATId, patientId: { in: treatments.map((treatment) => treatment.patient.id) } },
+    select: { patientId: true, startDate: true, state: true },
   });
 
   const now = new Date();
-  const lastActivityByClient = new Map();
-  const nextMeetingByClient = new Map();
+  const lastActivityByPatient = new Map();
+  const nextMeetingByPatient = new Map();
 
   for (const activity of activities) {
     const isPast = activity.startDate < now;
     const isFuture = activity.startDate >= now;
 
     if (isPast && activity.state !== "CANCELLED") {
-      const current = lastActivityByClient.get(activity.userId);
+      const current = lastActivityByPatient.get(activity.patientId);
       if (!current || activity.startDate > current) {
-        lastActivityByClient.set(activity.userId, activity.startDate);
+        lastActivityByPatient.set(activity.patientId, activity.startDate);
       }
     }
 
     if (isFuture && ACTIVE_APPOINTMENT_STATES.includes(activity.state)) {
-      const current = nextMeetingByClient.get(activity.userId);
+      const current = nextMeetingByPatient.get(activity.patientId);
       if (!current || activity.startDate < current) {
-        nextMeetingByClient.set(activity.userId, activity.startDate);
+        nextMeetingByPatient.set(activity.patientId, activity.startDate);
       }
     }
   }
 
-  return clientIds.map((clientId) => {
-    const patient = byClientId.get(clientId);
-    return {
-      id: patient.id,
-      name: patient.name,
-      lastName: patient.lastName,
-      lastActivity: (lastActivityByClient.get(clientId) ?? patient.acceptedUpdatedAt).toISOString(),
-      nextMeeting: nextMeetingByClient.get(clientId)?.toISOString() ?? null,
-    };
-  });
+  return treatments.map(({ status, startDate, patient }) => ({
+    id: patient.id,
+    name: patient.name,
+    lastName: patient.lastName,
+    status,
+    // Sin actividades previas, la última actividad es el inicio del acompañamiento
+    lastActivity: (lastActivityByPatient.get(patient.id) ?? startDate).toISOString(),
+    nextMeeting: nextMeetingByPatient.get(patient.id)?.toISOString() ?? null,
+  }));
 };
 
 // GET /at/me/dashboard
@@ -131,7 +121,7 @@ export const getMyDashboard = async (req, res) => {
           startDate: true,
           type: true,
           title: true,
-          user: { select: { name: true, lastName: true } },
+          patient: { select: { name: true, lastName: true } },
         },
       }),
       prisma.notification.findMany({
@@ -153,9 +143,9 @@ export const getMyDashboard = async (req, res) => {
           startDate: appointment.startDate.toISOString(),
           type: appointment.type,
           title: appointment.title,
-          // Recordatorios o supervisiones pueden no tener cliente vinculado
-          client: appointment.user
-            ? { name: appointment.user.name, lastName: appointment.user.lastName }
+          // Recordatorios o supervisiones pueden no tener paciente vinculado
+          patient: appointment.patient
+            ? { name: appointment.patient.name, lastName: appointment.patient.lastName }
             : null,
         })),
         notifications: notifications.map((notification) => ({

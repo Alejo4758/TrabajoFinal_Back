@@ -1,6 +1,7 @@
 import prisma from "../../lib/prisma.js";
 import { createNotification } from "../services/notification.service.js";
 import { getOrCreateDirectConversation } from "../services/conversation.service.js";
+import { patientNameSelect, findOwnPatient, requesterLabel } from "../services/patient.service.js";
 
 const ACTIVITY_TYPES = ["SESSION", "INTERVIEW", "MEETING", "OTHER"];
 const ACTIVITY_STATES = ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"];
@@ -26,10 +27,12 @@ const TIME_ZONE = "America/Argentina/Buenos_Aires";
 // Datos públicos de un usuario: nunca se exponen password, tokens ni documento
 const userPublicSelect = { id: true, name: true, lastName: true, email: true };
 
+// userId es el titular de la cuenta (quien ve la actividad en su agenda) y patientId el paciente al que se refiere
 const activityBaseSelect = {
   id: true,
   profileATId: true,
   userId: true,
+  patientId: true,
   title: true,
   description: true,
   ubication: true,
@@ -41,16 +44,18 @@ const activityBaseSelect = {
   updatedAt: true,
 };
 
-// Vista del AT: ve al cliente vinculado (si lo hay)
+// Vista del AT: ve al paciente y al titular de su cuenta (si los hay)
 const activityATSelect = {
   ...activityBaseSelect,
   user: { select: userPublicSelect },
+  patient: { select: patientNameSelect },
 };
 
-// Vista del cliente: ve al profesional
+// Vista del cliente: ve al profesional y para cuál de sus pacientes es la actividad
 const activityClientSelect = {
   ...activityBaseSelect,
   profileAT: { select: { id: true, user: { select: userPublicSelect } } },
+  patient: { select: patientNameSelect },
 };
 
 // Feriados por año, para no consultar la API externa en cada render del calendario
@@ -153,32 +158,22 @@ const getProfileATByUserId = (userId) =>
     select: { id: true, userId: true, user: { select: { name: true, lastName: true } } },
   });
 
-// Clientes vinculados a un AT: tienen un chat activo con él o algún turno previo en su agenda
-const linkedClientsWhere = (atUserId, profileATId) => ({
-  role: "CLIENT",
+// Pacientes vinculados a un AT: tienen un acompañamiento vigente con él o algún turno previo en su agenda
+// (por ejemplo una entrevista inicial, que se pide antes de que exista el acompañamiento)
+const linkedPatientsWhere = (profileATId) => ({
   OR: [
-    {
-      conversations: {
-        some: {
-          leftAt: null,
-          conversation: {
-            isGroup: false,
-            users: { some: { userId: atUserId, leftAt: null } },
-          },
-        },
-      },
-    },
+    { treatments: { some: { profileATId, status: { not: "FINISHED" } } } },
     { calendarActivities: { some: { profileATId } } },
   ],
 });
 
-const isLinkedClient = async (clientId, atUserId, profileATId) => {
-  const client = await prisma.user.findFirst({
-    where: { id: clientId, ...linkedClientsWhere(atUserId, profileATId) },
-    select: { id: true },
+// Paciente vinculado al AT, con el titular de su cuenta (quien ve la actividad y recibe los avisos).
+// Devuelve null si no existe o no está vinculado a ese AT
+const findLinkedPatient = (patientId, profileATId) =>
+  prisma.patient.findFirst({
+    where: { id: patientId, ...linkedPatientsWhere(profileATId) },
+    select: { id: true, tutorId: true },
   });
-  return Boolean(client);
-};
 
 // Primera actividad activa del AT que se superpone con [start, end), excluyendo opcionalmente una
 const findOverlap = (client, profileATId, start, end, excludeId = null) =>
@@ -253,26 +248,24 @@ export const getClientCalendar = async (req, res) => {
   }
 };
 
-// GET /api/calendar/clients
-export const getATLinkedClients = async (req, res) => {
+// GET /api/calendar/patients
+export const getATLinkedPatients = async (req, res) => {
   try {
-    const atUserId = req.user.userId;
-
-    const profileAT = await getProfileATByUserId(atUserId);
+    const profileAT = await getProfileATByUserId(req.user.userId);
     if (!profileAT) {
       return res.status(404).json({ error: "No se encontró un perfil de acompañante terapéutico para este usuario." });
     }
 
-    const clients = await prisma.user.findMany({
-      where: linkedClientsWhere(atUserId, profileAT.id),
+    const patients = await prisma.patient.findMany({
+      where: linkedPatientsWhere(profileAT.id),
       orderBy: [{ lastName: "asc" }, { name: "asc" }],
-      select: userPublicSelect,
+      select: patientNameSelect,
     });
 
-    return res.status(200).json({ data: clients });
+    return res.status(200).json({ data: patients });
   } catch (error) {
-    console.error("Error en getATLinkedClients:", error.code || "", error.message);
-    return res.status(500).json({ error: "Error interno del servidor al obtener los clientes." });
+    console.error("Error en getATLinkedPatients:", error.code || "", error.message);
+    return res.status(500).json({ error: "Error interno del servidor al obtener los pacientes." });
   }
 };
 
@@ -286,8 +279,8 @@ export const createCalendarActivity = async (req, res) => {
       return res.status(400).json({ error: "El cuerpo de la solicitud no es válido." });
     }
 
-    // Lista blanca: un profileATId del body se ignora, sale del token
-    const { userId, title, description, ubication, type = "SESSION", state = "PENDING", startDate, finishDate, force = false } = body;
+    // Lista blanca: un profileATId del body se ignora (sale del token) y un userId también (sale del paciente)
+    const { patientId, title, description, ubication, type = "SESSION", state = "PENDING", startDate, finishDate, force = false } = body;
 
     const titleResult = parseTitle(title);
     if (titleResult.error) return res.status(400).json({ error: titleResult.error });
@@ -318,12 +311,13 @@ export const createCalendarActivity = async (req, res) => {
       return res.status(404).json({ error: "No se encontró un perfil de acompañante terapéutico para este usuario." });
     }
 
-    // El cliente es opcional; si viene, tiene que ser uno ya vinculado a este AT
-    let clientId = null;
-    if (userId !== undefined && userId !== null) {
-      clientId = parseId(userId);
-      if (!clientId || !(await isLinkedClient(clientId, atUserId, profileAT.id))) {
-        return res.status(400).json({ error: "El cliente indicado no está vinculado a tu agenda." });
+    // El paciente es opcional; si viene, tiene que ser uno ya vinculado a este AT
+    let patient = null;
+    if (patientId !== undefined && patientId !== null) {
+      const parsedPatientId = parseId(patientId);
+      patient = parsedPatientId ? await findLinkedPatient(parsedPatientId, profileAT.id) : null;
+      if (!patient) {
+        return res.status(400).json({ error: "El paciente indicado no está vinculado a tu agenda." });
       }
     }
 
@@ -337,7 +331,9 @@ export const createCalendarActivity = async (req, res) => {
     const activity = await prisma.calendarActivity.create({
       data: {
         profileATId: profileAT.id,
-        userId: clientId,
+        // El titular de la cuenta se deriva del paciente: así la actividad aparece en su agenda
+        userId: patient?.tutorId ?? null,
+        patientId: patient?.id ?? null,
         title: titleResult.value,
         description: descriptionResult.value ?? null,
         ubication: ubicationResult.value ?? null,
@@ -350,9 +346,9 @@ export const createCalendarActivity = async (req, res) => {
     });
 
     // createNotification atrapa sus propios errores: si falla, la actividad igual queda creada
-    if (clientId) {
+    if (patient) {
       await createNotification(req.app.get("io"), {
-        userId: clientId,
+        userId: patient.tutorId,
         type: "ACTIVITY_REMINDER",
         title: `${profileAT.user.name} ${profileAT.user.lastName} agendó una actividad`,
         content: `${activity.title} - ${formatDate(activity.startDate)}`,
@@ -378,11 +374,16 @@ export const requestInterview = async (req, res) => {
       return res.status(400).json({ error: "El cuerpo de la solicitud no es válido." });
     }
 
-    const { profileATId, startDate, finishDate, message } = body;
+    const { profileATId, patientId, startDate, finishDate, message } = body;
 
     const atProfileId = Number.isInteger(profileATId) ? parseId(profileATId) : null;
     if (!atProfileId) {
       return res.status(400).json({ error: "El profesional indicado no es válido." });
+    }
+
+    const requestedPatientId = Number.isInteger(patientId) ? parseId(patientId) : null;
+    if (!requestedPatientId) {
+      return res.status(400).json({ error: "Indicá para quién es la entrevista." });
     }
 
     const start = parseDate(startDate);
@@ -416,10 +417,18 @@ export const requestInterview = async (req, res) => {
       return res.status(401).json({ error: "Tu sesión no es válida. Volvé a iniciar sesión." });
     }
 
+    // El paciente llega en el body: tiene que ser uno de los que cargó quien pide la entrevista.
+    // Si es de otra cuenta responde igual que si no existiera
+    const patient = await findOwnPatient(prisma, requestedPatientId, clientId);
+    if (!patient) {
+      return res.status(404).json({ error: "La persona indicada no existe." });
+    }
+
+    // Una sola entrevista pendiente por paciente y AT: la misma cuenta sí puede pedir otra para otro paciente
     const pendingInterview = await prisma.calendarActivity.findFirst({
       where: {
         profileATId: profileAT.id,
-        userId: clientId,
+        patientId: patient.id,
         type: "INTERVIEW",
         state: "PENDING",
         startDate: { gt: new Date() },
@@ -427,10 +436,11 @@ export const requestInterview = async (req, res) => {
       select: { id: true },
     });
     if (pendingInterview) {
-      return res.status(409).json({ error: "Ya tenés una entrevista pendiente con este profesional." });
+      return res.status(409).json({ error: "Ya hay una entrevista pendiente con este profesional para esta persona." });
     }
 
-    const clientName = `${client.name} ${client.lastName}`;
+    // "Ana Pérez" si el paciente es el titular de la cuenta; "Laura Pérez (para Juan Pérez)" si es un familiar
+    const clientName = requesterLabel(client, patient);
     const messageContent =
       messageResult.value ?? `Hola, me gustaría solicitar una entrevista inicial para el ${formatDate(start)}.`;
 
@@ -448,6 +458,7 @@ export const requestInterview = async (req, res) => {
           data: {
             profileATId: profileAT.id,
             userId: clientId,
+            patientId: patient.id,
             title: `Entrevista inicial con ${clientName}`,
             description: messageContent,
             type: "INTERVIEW",
@@ -539,13 +550,14 @@ const validateATUpdate = (body) => {
     data.state = body.state;
   }
 
-  if (body.userId !== undefined) {
-    if (body.userId === null) {
-      data.userId = null;
+  // Solo se lee el paciente: el titular de la cuenta (userId) lo deriva el controlador a partir de él
+  if (body.patientId !== undefined) {
+    if (body.patientId === null) {
+      data.patientId = null;
     } else {
-      const clientId = parseId(body.userId);
-      if (!clientId) return { error: "El cliente indicado no es válido." };
-      data.userId = clientId;
+      const patientId = parseId(body.patientId);
+      if (!patientId) return { error: "El paciente indicado no es válido." };
+      data.patientId = patientId;
     }
   }
 
@@ -630,11 +642,17 @@ export const updateCalendarActivity = async (req, res) => {
         return res.status(400).json({ error: "No se envió ningún cambio." });
       }
 
-      // Al reasignar un cliente, tiene que estar vinculado al AT dueño de la actividad
-      if (data.userId && data.userId !== activity.userId) {
-        const linked = await isLinkedClient(data.userId, activity.profileAT.userId, activity.profileATId);
-        if (!linked) {
-          return res.status(400).json({ error: "El cliente indicado no está vinculado a esta agenda." });
+      // Al cambiar el paciente, el nuevo tiene que estar vinculado al AT dueño de la actividad.
+      // El titular de la cuenta acompaña siempre al paciente: se reasigna (o se quita) junto con él
+      if (data.patientId !== undefined && data.patientId !== activity.patientId) {
+        if (data.patientId === null) {
+          data.userId = null;
+        } else {
+          const patient = await findLinkedPatient(data.patientId, activity.profileATId);
+          if (!patient) {
+            return res.status(400).json({ error: "El paciente indicado no está vinculado a esta agenda." });
+          }
+          data.userId = patient.tutorId;
         }
       }
     }
@@ -691,7 +709,7 @@ export const updateCalendarActivity = async (req, res) => {
         });
       }
 
-      // Si la actividad se le quitó a un cliente, se le avisa que ya no la tiene
+      // Si la actividad pasó a un paciente de otra cuenta (o quedó sin paciente), se le avisa a la anterior que ya no la tiene
       if (activity.userId && activity.userId !== updated.userId) {
         await createNotification(io, {
           userId: activity.userId,

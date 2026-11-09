@@ -1,5 +1,6 @@
 import { PrismaClient, Role, StatusAT } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { getOrCreateDirectConversation } from '../src/services/conversation.service.js';
 
 const prisma = new PrismaClient();
 
@@ -273,6 +274,88 @@ async function main() {
   });
 
   console.log(`✅ Admin creado: ${adminData.email} / 123456`);
+
+  // 7. Cuenta de un familiar con dos pacientes a su cargo (para probar solicitudes, agenda y el panel del A.T.)
+  const tutorData = {
+    email: 'familia@test.com',
+    password: hashedPassword,
+    name: 'Carla',
+    lastName: 'Ruiz',
+    documentType: 'DNI',
+    documentNumber: '99000001',
+    role: Role.CLIENT,
+    emailVerified: true
+  };
+
+  const tutor = await prisma.user.upsert({
+    where: { email: tutorData.email },
+    update: tutorData,
+    create: tutorData
+  });
+
+  // Un paciente no tiene un dato único propio: se lo identifica por cuenta + nombre para no duplicarlo al re-ejecutar el seed
+  const ensurePatient = async (data) => {
+    const where = { tutorId: tutor.id, name: data.name, lastName: data.lastName };
+    const existing = await prisma.patient.findFirst({ where });
+    return existing
+      ? prisma.patient.update({ where: { id: existing.id }, data })
+      : prisma.patient.create({ data: { ...data, tutorId: tutor.id } });
+  };
+
+  const tomas = await ensurePatient({
+    name: 'Tomás',
+    lastName: 'Ruiz',
+    dateOfBirth: new Date('2017-04-12'),
+    relationship: 'PARENT', // Carla es la madre
+    diagnosis: 'Trastorno del Espectro Autista (TEA)',
+    notes: 'Va a 3.er grado en el turno mañana. Se comunica mejor con apoyos visuales.'
+  });
+
+  const elena = await ensurePatient({
+    name: 'Elena',
+    lastName: 'Ruiz',
+    dateOfBirth: new Date('1948-09-03'),
+    relationship: 'CHILD', // Carla es la hija
+    diagnosis: null,
+    notes: 'Vive sola. Necesita acompañamiento por las tardes.'
+  });
+
+  const findProfileAT = (email) => prisma.profileAT.findFirst({ where: { user: { email } } });
+  const laura = await findProfileAT('laura.gomez@test.com');
+  const martin = await findProfileAT('martin.perez@test.com');
+
+  const ensureLinkRequest = async (patient, profileAT, data) => {
+    const where = { patientId: patient.id, profileATId: profileAT.id };
+    const existing = await prisma.linkRequest.findFirst({ where });
+    return existing ?? prisma.linkRequest.create({ data: { ...where, clientId: tutor.id, ...data } });
+  };
+
+  // Tomás ya está vinculado a Laura: solicitud aceptada + acompañamiento + chat entre Carla y Laura
+  await ensureLinkRequest(tomas, laura, {
+    description: 'Necesito acompañamiento para mi hijo de 8 años en el horario escolar, para trabajar la integración con sus compañeros.',
+    locality: 'Neuquén',
+    socialPrograms: ['ISSN'],
+    otherCoverage: false,
+    status: 'ACCEPTED'
+  });
+
+  await prisma.treatment.upsert({
+    where: { patientId_profileATId: { patientId: tomas.id, profileATId: laura.id } },
+    update: {},
+    create: { patientId: tomas.id, profileATId: laura.id }
+  });
+
+  await getOrCreateDirectConversation(prisma, tutor.id, laura.userId);
+
+  // Elena tiene una solicitud pendiente con Martín (para probar la pantalla de solicitudes del A.T.)
+  await ensureLinkRequest(elena, martin, {
+    description: 'Busco acompañamiento domiciliario para mi mamá de 78 años, tres tardes por semana.',
+    locality: 'Neuquén',
+    socialPrograms: ['PAMI'],
+    otherCoverage: false
+  });
+
+  console.log(`✅ Familiar creado: ${tutorData.email} / 123456, con 2 pacientes (Tomás, vinculado a Laura Gómez; Elena, con solicitud pendiente a Martín Pérez)`);
 }
 
 main()
