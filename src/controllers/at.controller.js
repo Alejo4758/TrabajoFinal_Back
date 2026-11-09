@@ -97,7 +97,8 @@ export const searchATs = async (req, res) => {
                             id: true,
                             name: true,
                             lastName: true,
-                            email: true
+                            email: true,
+                            profilePicture: true
                         }
                     },
                     localities: {
@@ -110,7 +111,7 @@ export const searchATs = async (req, res) => {
                         include: { obraSocial: true }
                     },
                     availability: {
-                        orderBy: { dayOfWeek: 'asc' }
+                        orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }]
                     }
                 },
                 orderBy: { id: 'desc' }
@@ -129,6 +130,8 @@ export const searchATs = async (req, res) => {
             name: at.user.name,
             lastName: at.user.lastName,
             email: at.user.email,
+            // Foto que el A.T. sube en "Mi perfil" (Cloudinary). null si no subió ninguna: el front muestra sus iniciales
+            profilePicture: at.user.profilePicture ?? null,
             studies: at.studies,
             genre: at.genre,
             dateOfBirth: at.dateOfBirth,
@@ -178,7 +181,8 @@ export const getATById = async (req, res) => {
                         id: true,
                         name: true,
                         lastName: true,
-                        email: true
+                        email: true,
+                        profilePicture: true
                     }
                 },
                 localities: { include: { locality: true } },
@@ -188,7 +192,7 @@ export const getATById = async (req, res) => {
                     orderBy: { startDate: 'desc' }
                 },
                 availability: {
-                    orderBy: { dayOfWeek: 'asc' }
+                    orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }]
                 }
             }
         });
@@ -209,6 +213,8 @@ export const getATById = async (req, res) => {
             name: at.user?.name || '',
             lastName: at.user?.lastName || '',
             email: at.user?.email || '',
+            // Foto que el A.T. sube en "Mi perfil" (Cloudinary). null si no subió ninguna: el front muestra sus iniciales
+            profilePicture: at.user?.profilePicture ?? null,
             // Mantenemos 'user' por si el front hace at.user.name
             user: at.user,
             dateOfBirth: at.dateOfBirth,

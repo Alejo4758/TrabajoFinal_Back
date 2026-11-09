@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
 import cloudinary from "../config/cloudinary.js";
 import { enviarEmailVerificacion } from "../services/email.service.js";
+import { profileATCompletenessInclude, getMissingProfileATFields } from "../services/profileAT.service.js";
 
 // REGISTRO DE CLIENTES NORMALES
 export const register = async (req, res) => {
@@ -202,7 +203,7 @@ export const login = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { email: emailToLogin },
       include: {
-        profileAT: true,
+        profileAT: { include: profileATCompletenessInclude },
       },
     });
 
@@ -249,11 +250,21 @@ export const login = async (req, res) => {
       { expiresIn: "2h" }
     );
 
-    const { password: _, verificationToken: __, ...userWithoutPassword } = user;
+    const { password: _, verificationToken: __, profileAT, ...userWithoutPassword } = user;
+    // _count solo sirve para calcular qué falta del perfil: no se manda
+    const { _count, ...profileATData } = profileAT ?? {};
+
+    // El front guarda el usuario en la sesión: así sabe, sin otro pedido, si tiene que avisarle al A.T. que complete su perfil
+    const missingProfileFields = user.role === "AT" ? getMissingProfileATFields(profileAT) : [];
 
     return res.status(200).json({
       token,
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        profileAT: profileAT ? profileATData : null,
+        isProfileIncomplete: missingProfileFields.length > 0,
+        missingProfileFields,
+      },
     });
   } catch (error) {
     console.error("🔴 ERROR EN LOGIN:", error);

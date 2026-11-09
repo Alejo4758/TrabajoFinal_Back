@@ -57,6 +57,9 @@ model Admin {
 
   validations Validation[]
 
+  // Sugerencias de especialidades y obras sociales que revisó
+  catalogSuggestions CatalogSuggestion[]
+
   @@map("Admin")
 }
 
@@ -108,6 +111,9 @@ model ProfileAT {
 
   // Acompañamientos (pacientes vinculados)
   treatments Treatment[]
+
+  // Especialidades y obras sociales que propuso agregar porque no estaban en la lista
+  catalogSuggestions CatalogSuggestion[]
 
   @@map("PerfilAT")
 }
@@ -217,6 +223,30 @@ model AvailabilityAT {
   profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
 
   @@map("DisponibilidadHoraria")
+}
+
+// Especialidad u obra social que un A.T. propone porque no está en la lista. La revisa un administrador:
+// si la aprueba, se agrega al catálogo (o se usa la que ya existe con ese nombre) y queda en el perfil de quien la propuso
+model CatalogSuggestion {
+  id         Int                     @id @default(autoincrement())
+  type       CatalogSuggestionType   @map("tipo")
+  name       String                  @map("nombre")
+  status     CatalogSuggestionStatus @default(PENDING) @map("estado")
+  // Motivo del rechazo, o el nombre con el que se agregó si el administrador lo corrigió
+  reviewNote String?                 @map("observaciones")
+  createdAt  DateTime                @default(now())
+  reviewedAt DateTime?               @map("fecha_revision")
+
+  profileATId Int       @map("perfilATId")
+  profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
+
+  // Administrador que la revisó. Si se borra su cuenta, la sugerencia queda revisada igual
+  reviewedById Int?   @map("adminId")
+  reviewedBy   Admin? @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, type])
+  @@index([profileATId])
+  @@map("SugerenciaCatalogo")
 }
 
 // ==========================================
@@ -455,6 +485,23 @@ enum StatusAT {
   REJECTED @map("RECHAZADO")
 
   @@map("EstadoAT")
+}
+
+// Qué catálogo se propone ampliar
+enum CatalogSuggestionType {
+  ESPECIALITY @map("ESPECIALIDAD")
+  OBRA_SOCIAL @map("OBRA_SOCIAL")
+
+  @@map("TipoSugerencia")
+}
+
+// Estado de una sugerencia de especialidad u obra social
+enum CatalogSuggestionStatus {
+  PENDING  @map("PENDIENTE")
+  APPROVED @map("APROBADA")
+  REJECTED @map("RECHAZADA")
+
+  @@map("EstadoSugerencia")
 }
 
 // Link request states

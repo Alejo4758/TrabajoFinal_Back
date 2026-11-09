@@ -80,3 +80,31 @@ export const getDepartments = async (req, res) => {
         return res.status(500).json({ error: 'Error al cargar departamentos' });
     }
 };
+
+// GET /localities/options?province=...&department=...
+// Localidades con su id, para que el A.T. elija sus zonas de trabajo. GET /localities devuelve solo nombres (los usa el
+// buscador), y un nombre no alcanza para guardar la relación: se repite entre departamentos y provincias
+export const getLocalityOptions = async (req, res) => {
+    const province = typeof req.query.province === 'string' ? req.query.province.trim() : '';
+    const department = typeof req.query.department === 'string' ? req.query.department.trim() : '';
+
+    if (!province) {
+        return res.status(400).json({ error: 'Debe indicar una provincia' });
+    }
+
+    try {
+        const localities = await prisma.locality.findMany({
+            where: {
+                provinceName: province,
+                ...(department && { departmentName: department })
+            },
+            select: { id: true, name: true, departmentName: true, provinceName: true },
+            orderBy: [{ name: 'asc' }, { departmentName: 'asc' }]
+        });
+
+        return res.status(200).json({ data: localities });
+    } catch (error) {
+        console.error('Error al obtener opciones de localidades:', error);
+        return res.status(500).json({ error: 'Error al cargar localidades' });
+    }
+};
