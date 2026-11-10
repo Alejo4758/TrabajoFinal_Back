@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { verifyToken, requireRole } from "../middlewares/auth.middleware.js";
-import { getPatientDetail, savePatientPlan } from "../controllers/atPatient.controller.js";
+import {
+  getPatientDetail,
+  savePatientPlan,
+  getPatientEncounters,
+  createPatientEncounter,
+} from "../controllers/atPatient.controller.js";
 
 const router = Router();
 
@@ -10,5 +15,7 @@ router.use(verifyToken, requireRole("AT"));
 
 router.get("/:patientId", getPatientDetail);
 router.put("/:patientId/plan", savePatientPlan);
+router.get("/:patientId/encounters", getPatientEncounters);
+router.post("/:patientId/encounters", createPatientEncounter);
 
 export default router;
