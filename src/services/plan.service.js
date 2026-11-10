@@ -19,10 +19,10 @@ const STAGE_ID_REGEX = /^[A-Za-z0-9_-]{1,40}$/;
 // Admite los UUID que genera el front y los ids que se arman a partir del ámbito ("<id del ámbito>-g<posición>")
 const GOAL_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
 
-const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+export const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 // Texto opcional. Devuelve { value } ya recortado ("" si no vino) o { error }
-const parseText = (value, max, label) => {
+export const parseText = (value, max, label) => {
   if (value === undefined || value === null) return { value: "" };
   if (typeof value !== "string") return { error: `${label} no es válido.` };
   const trimmed = value.trim();
@@ -51,7 +51,7 @@ const parseTextList = (value, label) => {
 };
 
 // Fecha "YYYY-MM-DD" opcional ("" si no vino). Se compara ida y vuelta para rechazar fechas como 2026-02-31
-const parseDate = (value, label) => {
+export const parseDate = (value, label) => {
   if (value === undefined || value === null || value === "") return { value: "" };
   if (typeof value !== "string" || !DATE_REGEX.test(value)) return { error: `${label} no es una fecha válida.` };
   const date = new Date(`${value}T00:00:00Z`);
@@ -245,3 +245,13 @@ export const validatePlan = (body) => {
 // Plan tal como lo espera el front: el contenido guardado más su id y la fecha del último cambio
 export const toPlanResponse = (workPlan) =>
   workPlan ? { ...workPlan.content, id: workPlan.id, updatedAt: workPlan.updatedAt.toISOString() } : null;
+
+// Ámbitos del plan guardado, con los objetivos específicos siempre como { id, text }. validatePlan ya los guarda así,
+// pero si alguno quedó como texto suelto se le arma el id igual que al validarlo (lo usan los encuentros)
+export const getPlanStages = (content) =>
+  (Array.isArray(content?.stages) ? content.stages : []).map((stage) => ({
+    ...stage,
+    specificGoals: (Array.isArray(stage.specificGoals) ? stage.specificGoals : []).map((goal, index) =>
+      typeof goal === "string" ? { id: `${stage.id}-g${index + 1}`, text: goal } : goal
+    ),
+  }));

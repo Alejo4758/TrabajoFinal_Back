@@ -18,6 +18,11 @@ export const fullName = (person) => [person?.name, person?.lastName].filter(Bool
 // Fecha de nacimiento como "YYYY-MM-DD" (la columna es DATE: Prisma la devuelve a medianoche UTC)
 export const toDateOnly = (date) => (date ? date.toISOString().slice(0, 10) : null);
 
+export const TIME_ZONE = "America/Argentina/Buenos_Aires";
+
+// Hoy en Argentina como "YYYY-MM-DD" (en-CA usa ese formato)
+export const todayString = () => new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(new Date());
+
 // Cómo se nombra a quien pide algo: "Ana Pérez" si el paciente es el titular de la cuenta,
 // "Laura Pérez (para Juan Pérez)" si la cuenta es de un familiar o tutor
 export const requesterLabel = (tutor, patient) =>
