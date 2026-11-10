@@ -321,6 +321,9 @@ model CalendarActivity {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // Encuentro registrado al que corresponde esta sesión (si se cargó desde el registro de encuentros)
+  encounter Encounter?
+
   profileAT ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
   user      User?     @relation("UserCalendar", fields: [userId], references: [id], onDelete: SetNull)
   patient   Patient?  @relation(fields: [patientId], references: [id], onDelete: SetNull)
@@ -434,7 +437,8 @@ model Treatment {
   profileATId Int       @map("perfilATId")
   profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
 
-  workPlan WorkPlan?
+  workPlan   WorkPlan?
+  encounters Encounter[]
 
   @@unique([patientId, profileATId])
   @@index([profileATId, status])
@@ -453,6 +457,56 @@ model WorkPlan {
   treatment   Treatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
 
   @@map("PlanTrabajo")
+}
+
+// Encuentro que registra el A.T. en un acompañamiento: qué objetivos del plan trabajó, cómo los valoró,
+// qué actividades hizo y sus observaciones. Lo valida src/services/encounter.service.js.
+// Los objetivos y el ámbito viven en el plan (JSON) y se referencian por su id. Además se guarda una copia del texto
+// del objetivo y del nombre del ámbito al momento de registrar: si después se corrige o se borra del plan,
+// el historial se sigue leyendo igual que el día del encuentro.
+// Cada encuentro queda también en el calendario como una sesión completada (calendarActivity).
+model Encounter {
+  id              Int      @id @default(autoincrement())
+  // Fecha y hora de inicio. El A.T. la carga en hora de Argentina; se guarda como instante, igual que el calendario
+  startDate       DateTime @map("fecha_inicio")
+  durationMinutes Int      @map("duracion_min")
+  stageId         String   @map("ambitoId")
+  stageName       String   @map("ambito")
+  activities      String[] @map("actividades")
+  observations    String?  @map("observaciones") @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  treatmentId Int       @map("acompanamientoId")
+  treatment   Treatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
+
+  // Sesión del calendario que corresponde a este encuentro. Si el A.T. la borra del calendario, el encuentro queda igual
+  calendarActivityId Int?              @unique @map("actividadId")
+  calendarActivity   CalendarActivity? @relation(fields: [calendarActivityId], references: [id], onDelete: SetNull)
+
+  goals EncounterGoal[]
+
+  // Un paciente no puede tener dos encuentros con la misma fecha y hora (también sirve de índice para el historial)
+  @@unique([treatmentId, startDate])
+  @@map("Encuentro")
+}
+
+// Objetivo trabajado en un encuentro, con el nivel observado.
+// La migración add_encounters agrega a mano un CHECK que limita "nivel" de 1 a 5 (Prisma no soporta CHECK en el schema)
+model EncounterGoal {
+  id       Int     @id @default(autoincrement())
+  // id del objetivo específico en el plan de trabajo (WorkPlan.content.stages[].specificGoals[].id)
+  goalId   String  @map("objetivoId")
+  goalText String  @map("objetivo")
+  // Escala de 1 (aún no lo logra) a 5 (autónomo), la misma de utils/scale.js en el front
+  level    Int     @map("nivel")
+  note     String? @map("nota")
+
+  encounterId Int       @map("encuentroId")
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@unique([encounterId, goalId])
+  @@map("EncuentroObjetivo")
 }
 
 // ==========================================
