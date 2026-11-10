@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma.js";
-import { toDateOnly } from "../services/patient.service.js";
+import { toDateOnly, todayString } from "../services/patient.service.js";
 
 // Pacientes vistos por el titular de la cuenta (rol CLIENT): las personas a su cargo que reciben el acompañamiento.
 // En todos los endpoints el titular sale SIEMPRE del token, nunca del body ni de la URL.
@@ -11,7 +11,6 @@ const NOTES_MAX = 1000;
 const PATIENTS_MAX = 20;
 const AGE_MAX_YEARS = 120;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_ZONE = "America/Argentina/Buenos_Aires";
 
 // Lo que ve el titular sobre sus propios pacientes, con los acompañamientos que tiene cada uno
 const ownPatientSelect = {
@@ -40,9 +39,6 @@ const parseId = (value) => {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 };
-
-// Hoy en Argentina como "YYYY-MM-DD" (en-CA usa ese formato)
-const todayString = () => new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(new Date());
 
 const parseName = (value, label) => {
   if (typeof value !== "string" || !value.trim()) return { error: `${label} es obligatorio.` };
