@@ -439,6 +439,7 @@ model Treatment {
 
   workPlan   WorkPlan?
   encounters Encounter[]
+  reports    Report[]
 
   @@unique([patientId, profileATId])
   @@index([profileATId, status])
@@ -507,6 +508,30 @@ model EncounterGoal {
 
   @@unique([encounterId, goalId])
   @@map("EncuentroObjetivo")
+}
+
+// Informe periódico que redacta el A.T. sobre un acompañamiento, para un destinatario (obra social, escuela, familia o
+// equipo médico). Cuelga del acompañamiento, igual que el plan y los encuentros: es propio de ese A.T. con ese paciente.
+// El borrador lo puede generar la IA (POST /api/patients/:patientId/reports/generate-draft), pero lo que se guarda
+// acá es siempre lo que el A.T. revisó. content es HTML ya sanitizado por el backend (src/services/report.service.js)
+model Report {
+  id         Int            @id @default(autoincrement())
+  title      String         @map("titulo")
+  content    String         @map("contenido") @db.Text
+  audience   ReportAudience @map("destinatario")
+  // Período que cubre el informe, en fechas de Argentina (sin hora)
+  periodFrom DateTime       @map("periodo_desde") @db.Date
+  periodTo   DateTime       @map("periodo_hasta") @db.Date
+  // Un informe finalizado ya no se puede modificar
+  status     ReportStatus   @default(DRAFT) @map("estado")
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  treatmentId Int       @map("acompanamientoId")
+  treatment   Treatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
+
+  @@index([treatmentId, createdAt(sort: Desc)])
+  @@map("Informe")
 }
 
 // ==========================================
@@ -608,4 +633,22 @@ enum ActivityState {
   COMPLETED @map("COMPLETADO")
 
   @@map("EstadoActividad")
+}
+
+// A quién va dirigido un informe: define el tono, la estructura y qué datos se le pasan a la IA
+enum ReportAudience {
+  OBRA_SOCIAL
+  ESCUELA
+  FAMILIA
+  EQUIPO_MEDICO
+
+  @@map("DestinatarioInforme")
+}
+
+// Report states
+enum ReportStatus {
+  DRAFT @map("BORRADOR")
+  FINAL @map("FINALIZADO")
+
+  @@map("EstadoInforme")
 }
