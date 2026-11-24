@@ -18,8 +18,10 @@ model User {
   password          String
   name              String    @map("nombre")
   lastName          String    @map("apellidos")
-  documentType      String    @map("tipo_doc")
-  documentNumber    String    @unique @map("nro_doc")
+  // Opcionales solo para los integrantes de la red de apoyo (se registran desde la invitación, que no los pide).
+  // El registro de clientes y A.T. los sigue exigiendo. nro_doc es único, pero Postgres admite varios NULL
+  documentType      String?   @map("tipo_doc")
+  documentNumber    String?   @unique @map("nro_doc")
   role              Role      @default(CLIENT) @map("rol")
   emailVerified     Boolean   @default(false) @map("emailVerificado")
   verificationToken String?   @unique
@@ -46,6 +48,12 @@ model User {
 
   // Personas a su cargo que reciben el acompañamiento (como cliente)
   patients Patient[]
+
+  // Red de apoyo: acompañamientos de los que forma parte (como SUPPORT), aportes que escribió (AT o SUPPORT)
+  // y aportes que ocultó (como AT)
+  networkMemberships  NetworkMember[]
+  contributions       Contribution[]  @relation("ContributionAuthor")
+  hiddenContributions Contribution[]  @relation("ContributionHiddenBy")
 
   @@map("Usuario")
 }
@@ -437,9 +445,11 @@ model Treatment {
   profileATId Int       @map("perfilATId")
   profileAT   ProfileAT @relation(fields: [profileATId], references: [id], onDelete: Cascade)
 
-  workPlan   WorkPlan?
-  encounters Encounter[]
-  reports    Report[]
+  workPlan       WorkPlan?
+  encounters     Encounter[]
+  reports        Report[]
+  networkMembers NetworkMember[]
+  contributions  Contribution[]
 
   @@unique([patientId, profileATId])
   @@index([profileATId, status])
@@ -535,24 +545,100 @@ model Report {
 }
 
 // ==========================================
+// 9. RED DE APOYO
+// ==========================================
+
+// Integrante de la red de apoyo de un acompañamiento: familia, docentes u otros profesionales que el A.T. invita
+// a ver parte del acompañamiento. La misma fila es la invitación (PENDING) y, cuando la persona crea su cuenta,
+// el integrante (ACTIVE). "Vencida" no se guarda: es una PENDING con expiresAt en el pasado.
+// Cuelga del acompañamiento, igual que el plan, los encuentros y los informes: es la red de ESE A.T. con ESE paciente.
+// Del token de la invitación se guarda solo el hash sha256 (src/services/network.service.js): el token en texto plano
+// viaja únicamente en el correo y en la respuesta de invitar y de reenviar
+model NetworkMember {
+  id           Int                 @id @default(autoincrement())
+  // Siempre en minúsculas
+  email        String              @map("correo")
+  name         String?             @map("nombre")
+  role         NetworkRole         @map("rol")
+  // Vínculo con el paciente, en texto libre ("Madre", "Docente de grado"...)
+  relationship String?             @map("vinculo")
+  // Secciones del acompañamiento que puede ver
+  access       NetworkSection[]    @map("accesos")
+  status       NetworkMemberStatus @default(PENDING) @map("estado")
+  // Se conserva después de aceptar: volver a abrir el enlace responde "ya fue utilizada"
+  tokenHash    String?             @unique @map("token_hash")
+  invitedAt    DateTime            @default(now()) @map("fecha_invitacion")
+  expiresAt    DateTime            @map("vence")
+  acceptedAt   DateTime?           @map("fecha_aceptacion")
+
+  treatmentId Int       @map("acompanamientoId")
+  treatment   Treatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
+
+  // Cuenta del integrante: se completa al aceptar la invitación
+  userId Int?  @map("usuarioId")
+  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([treatmentId, email])
+  @@index([userId])
+  @@map("IntegranteRed")
+}
+
+// Aporte (comentario) sobre el plan, un encuentro o un objetivo, que escribe el A.T. o un integrante de la red.
+// targetId es "plan", el id del Encounter o el id del objetivo en el plan (WorkPlan.content.stages[].specificGoals[].id).
+// targetLabel, authorRole y authorRelationship son copias al momento de escribir, como en EncounterGoal: el aporte se
+// sigue leyendo igual si se corrige el plan o si quitan al autor de la red
+model Contribution {
+  id                 Int                @id @default(autoincrement())
+  targetType         ContributionTarget @map("destino_tipo")
+  targetId           String             @map("destino_id")
+  targetLabel        String             @map("destino")
+  text               String             @map("texto") @db.Text
+  // "AT" o el rol en la red en minúsculas (family, education, health, other)
+  authorRole         String             @map("rol_autor")
+  authorRelationship String?            @map("vinculo_autor")
+  createdAt          DateTime           @default(now())
+  editedAt           DateTime?          @map("editado_en")
+  // Oculto por el A.T.: el resto de la red deja de verlo; su autor lo sigue viendo, marcado como oculto
+  hiddenAt           DateTime?          @map("oculto_en")
+  hiddenById         Int?               @map("oculto_por")
+  hiddenBy           User?              @relation("ContributionHiddenBy", fields: [hiddenById], references: [id], onDelete: SetNull)
+
+  treatmentId Int       @map("acompanamientoId")
+  treatment   Treatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
+
+  authorId Int  @map("autorId")
+  author   User @relation("ContributionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([treatmentId, createdAt])
+  @@map("Aporte")
+}
+
+// ==========================================
 // 5. ENUMS
 // ==========================================
 
 enum NotificationType {
-  CHAT_MESSAGE      @map("CHAT_MENSAJE")
-  INTERVIEW_REQUEST @map("SOLICITUD_ENTREVISTA")
-  INTERVIEW_STATUS  @map("ESTADO_ENTREVISTA")
-  PROFILE_VALIDATED @map("PERFIL_VALIDADO")
-  ACTIVITY_REMINDER @map("RECORDATORIO_ACTIVIDAD")
+  CHAT_MESSAGE            @map("CHAT_MENSAJE")
+  INTERVIEW_REQUEST       @map("SOLICITUD_ENTREVISTA")
+  INTERVIEW_STATUS        @map("ESTADO_ENTREVISTA")
+  PROFILE_VALIDATED       @map("PERFIL_VALIDADO")
+  ACTIVITY_REMINDER       @map("RECORDATORIO_ACTIVIDAD")
+  // Red de apoyo: un invitado aceptó (le llega al A.T.) y un integrante publicó un aporte
+  NETWORK_INVITE_ACCEPTED @map("RED_INVITACION_ACEPTADA")
+  NETWORK_CONTRIBUTION    @map("RED_APORTE")
+  // El A.T. finalizó un informe: les llega a los integrantes con acceso a Informes
+  NETWORK_REPORT_SHARED   @map("RED_INFORME_COMPARTIDO")
 
   @@map("TipoNotificacion")
 }
 
 // Allowed platform roles
 enum Role {
-  CLIENT @map("CLIENTE")
+  CLIENT  @map("CLIENTE")
   AT
   ADMIN
+  // Integrante de la red de apoyo de un paciente. Solo se crea aceptando una invitación del A.T.
+  SUPPORT @map("RED_APOYO")
 
   @@map("Role")
 }
@@ -651,4 +737,41 @@ enum ReportStatus {
   FINAL @map("FINALIZADO")
 
   @@map("EstadoInforme")
+}
+
+// Rol de un integrante dentro de la red de apoyo (en la API va en minúsculas: family, education...)
+enum NetworkRole {
+  FAMILY    @map("FAMILIA")
+  EDUCATION @map("EDUCACION")
+  HEALTH    @map("SALUD")
+  OTHER     @map("OTRO")
+
+  @@map("RolRed")
+}
+
+// Secciones del acompañamiento que se le pueden habilitar a un integrante
+enum NetworkSection {
+  PLAN     @map("PLAN")
+  SESSIONS @map("ENCUENTROS")
+  PROGRESS @map("EVOLUCION")
+  REPORTS  @map("INFORMES")
+
+  @@map("SeccionRed")
+}
+
+// Invitación pendiente o integrante activo (la vencida es una pendiente con la fecha pasada)
+enum NetworkMemberStatus {
+  PENDING @map("PENDIENTE")
+  ACTIVE  @map("ACTIVO")
+
+  @@map("EstadoIntegranteRed")
+}
+
+// Sobre qué se escribe un aporte
+enum ContributionTarget {
+  PLAN    @map("PLAN")
+  SESSION @map("ENCUENTRO")
+  GOAL    @map("OBJETIVO")
+
+  @@map("DestinoAporte")
 }

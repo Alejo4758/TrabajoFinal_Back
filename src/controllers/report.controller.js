@@ -11,6 +11,7 @@ import {
 import { generateReportDraft, refineReportDraft, ENCOUNTERS_MAX } from "../services/reportDraft.service.js";
 import { AiNotConfiguredError, AiGenerationError } from "../services/gemini.service.js";
 import { encounterSelect } from "../services/encounter.service.js";
+import { notifyReportShared } from "../services/network.service.js";
 
 // Informes periódicos de un paciente (Feature 15): borrador con IA según destinatario y los informes guardados.
 //
@@ -315,6 +316,11 @@ export const createReport = async (req, res) => {
       select: reportSelect,
     });
 
+    // Un informe finalizado se comparte con la red de apoyo (integrantes con acceso a Informes): se les avisa
+    if (report.status === READONLY_STATUS) {
+      await notifyReportShared(req.app.get("io"), { treatmentId: report.treatmentId, report });
+    }
+
     return res.status(201).json({ data: toReportResponse(report) });
   } catch (error) {
     // Solo se loguea el código y el mensaje: nunca el contenido del informe
@@ -364,6 +370,12 @@ export const updateReport = async (req, res) => {
     }
 
     const report = await prisma.report.findUnique({ where: { id: existing.id }, select: reportSelect });
+
+    // Pasó de borrador a finalizado (uno ya finalizado no llega hasta acá): se comparte con la red y se le avisa
+    if (report.status === READONLY_STATUS) {
+      await notifyReportShared(req.app.get("io"), { treatmentId: report.treatmentId, report });
+    }
+
     return res.status(200).json({ data: toReportResponse(report) });
   } catch (error) {
     console.error("Error en updateReport:", error.code || "", error.message);

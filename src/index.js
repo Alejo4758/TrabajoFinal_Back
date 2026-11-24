@@ -12,6 +12,10 @@ import userRoutes from "./routes/user.routes.js";
 import patientRoutes from "./routes/patient.routes.js";
 import atPatientRoutes from "./routes/atPatient.routes.js";
 import reportRoutes from "./routes/report.routes.js";
+import networkRoutes from "./routes/network.routes.js";
+import invitationRoutes from "./routes/invitation.routes.js";
+import supportNetworkRoutes from "./routes/supportNetwork.routes.js";
+import contributionRoutes from "./routes/contribution.routes.js";
 
 import { PrismaClient } from "@prisma/client";
 import { createServer } from "http";
@@ -70,6 +74,19 @@ app.use("/api/users", userRoutes);
 // Informes periódicos de un paciente (A.T. y ADMIN), con borrador generado por IA.
 // Tiene que ir ANTES de "/api/patients": ese router exige rol CLIENT para todo lo que entra por él
 app.use("/api/patients/:patientId/reports", reportRoutes);
+
+// Aportes de la red de apoyo (A.T. y SUPPORT). También va ANTES de "/api/patients", por el mismo motivo
+app.use("/api/patients/:patientId/contributions", contributionRoutes);
+
+// Red de apoyo del paciente, del lado del A.T. (invitaciones e integrantes).
+// Va antes de "/api/at/patients" para que quede claro que no pasa por ese router
+app.use("/api/at/patients/:patientId/network", networkRoutes);
+
+// Invitaciones a la red de apoyo, del lado del invitado: públicas (sin token) y con límite de pedidos por IP
+app.use("/api/invitations", invitationRoutes);
+
+// Lo que ve el integrante de la red de apoyo logueado: sus acompañamientos y el tablero de cada uno
+app.use("/api/network", supportNetworkRoutes);
 
 // Pacientes: los que carga el titular de la cuenta (/api/patients)
 // y los que acompaña el A.T. logueado, con su plan de trabajo (/api/at/patients)
