@@ -1,6 +1,7 @@
 import { PrismaClient, Role, StatusAT } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { getOrCreateDirectConversation } from '../src/services/conversation.service.js';
+import { seedSupportNetwork } from './seed-network.js';
 
 const prisma = new PrismaClient();
 
@@ -356,6 +357,9 @@ async function main() {
   });
 
   console.log(`✅ Familiar creado: ${tutorData.email} / 123456, con 2 pacientes (Tomás, vinculado a Laura Gómez; Elena, con solicitud pendiente a Martín Pérez)`);
+
+  // 8. Red de apoyo de Tomás (integrantes, invitaciones y aportes): prisma/seed-network.js
+  await seedSupportNetwork(prisma);
 }
 
 main()
