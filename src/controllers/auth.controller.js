@@ -14,8 +14,14 @@ export const register = async (req, res) => {
     const normalizedRole = (roleFromBody || rol || "CLIENT").toString().toUpperCase();
     const role = normalizedRole === "CLIENTE" ? "CLIENT" : normalizedRole;
 
+    // El documento es opcional en la base solo por los integrantes de la red de apoyo: acá se sigue exigiendo
     if (!email || !password || !name || !lastName || !documentType || !documentNumber) {
       return res.status(400).json({ error: "Faltan datos obligatorios." });
+    }
+
+    // Las cuentas de la red de apoyo se crean solo aceptando una invitación (POST /api/invitations/:token/accept)
+    if (role === "SUPPORT" || role === "RED_APOYO") {
+      return res.status(400).json({ error: "Las cuentas de la red de apoyo se crean desde la invitación del acompañante." });
     }
 
     const emailToSave = email.trim().toLowerCase();
@@ -32,7 +38,7 @@ export const register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    
+
     // CORRECCIÓN APLICADA AQUÍ (ISOString)
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); 
 
